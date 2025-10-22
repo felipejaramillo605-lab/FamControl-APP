@@ -68,3 +68,16 @@ This section has moved here: [https://facebook.github.io/create-react-app/docs/d
 ### `npm run build` fails to minify
 
 This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+
+
+### para actualizar
+💡 Dato pro:
+Cada vez que hagas un cambio en tu código local y ejecutes:
+
+git add .
+git commit -m "actualización"
+git push
+
+
+Vercel volverá a desplegar la app automáticamente.
+No necesitas volver a hacer npm run build ni nada más.
