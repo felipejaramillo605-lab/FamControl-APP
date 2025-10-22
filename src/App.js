@@ -1,3 +1,4 @@
+import { supabase } from './supabaseClient';
 import React, { useState, useEffect } from 'react';
 import { Plus, Trash2, Edit2, LogOut, BarChart3, Calendar, DollarSign, Home, Moon, Sun, ShoppingCart, Wallet, TrendingUp, ArrowRightLeft, Download, Upload } from 'lucide-react';
 import { PieChart, Pie, BarChart, Bar, ResponsiveContainer, Cell, Tooltip, XAxis, YAxis } from 'recharts';
@@ -71,17 +72,25 @@ export default function FamControl() {
   });
 
   useEffect(() => {
-    const savedUsers = JSON.parse(localStorage.getItem('famcontrol_users') || '{}');
-    const savedCurrentUser = localStorage.getItem('famcontrol_current_user');
-    setUsers(savedUsers);
-    if (savedCurrentUser) {
-      setUser(savedCurrentUser);
-      setTransactions(JSON.parse(localStorage.getItem(`transactions_${savedCurrentUser}`) || '{}'));
-      setEvents(JSON.parse(localStorage.getItem(`events_${savedCurrentUser}`) || '{}'));
-      setAccounts(JSON.parse(localStorage.getItem(`accounts_${savedCurrentUser}`)) || DEFAULT_ACCOUNTS);
-      setBudgets(JSON.parse(localStorage.getItem(`budgets_${savedCurrentUser}`) || '{}'));
-      setShoppingList(JSON.parse(localStorage.getItem(`shopping_${savedCurrentUser}`) || '{}'));
-    }
+    // Verificar sesión activa en Supabase
+    const checkSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (session?.user) {
+        const userEmail = session.user.email;
+        setUser(userEmail);
+        localStorage.setItem('famcontrol_current_user', userEmail);
+        
+        // Cargar datos del usuario
+        setTransactions(JSON.parse(localStorage.getItem(`transactions_${userEmail}`) || '{}'));
+        setEvents(JSON.parse(localStorage.getItem(`events_${userEmail}`) || '{}'));
+        setAccounts(JSON.parse(localStorage.getItem(`accounts_${userEmail}`)) || DEFAULT_ACCOUNTS);
+        setBudgets(JSON.parse(localStorage.getItem(`budgets_${userEmail}`) || '{}'));
+        setShoppingList(JSON.parse(localStorage.getItem(`shopping_${userEmail}`) || '{}'));
+      }
+    };
+    
+    checkSession();
   }, []);
 
   useEffect(() => {
@@ -94,25 +103,51 @@ export default function FamControl() {
     }
   }, [transactions, events, accounts, budgets, shoppingList, user]);
 
-  const handleLogin = () => {
-    if (!loginEmail || !loginPassword) return;
-    if (users[loginEmail] && users[loginEmail].password === loginPassword) {
-      setUser(loginEmail);
-      localStorage.setItem('famcontrol_current_user', loginEmail);
-      setLoginEmail('');
-      setLoginPassword('');
-    } else if (!registerMode) {
-      alert('Email o contraseña incorrectos');
-    } else {
-      const newUsers = { ...users, [loginEmail]: { password: loginPassword } };
-      setUsers(newUsers);
-      localStorage.setItem('famcontrol_users', JSON.stringify(newUsers));
-      setUser(loginEmail);
-      localStorage.setItem('famcontrol_current_user', loginEmail);
-      setLoginEmail('');
-      setLoginPassword('');
+  const handleLogin = async () => {
+    if (!loginEmail || !loginPassword) {
+      alert('Por favor completa todos los campos');
+      return;
     }
-    setRegisterMode(false);
+
+    try {
+      if (registerMode) {
+        // REGISTRO
+        const { data, error } = await supabase.auth.signUp({
+          email: loginEmail,
+          password: loginPassword,
+        });
+        
+        if (error) {
+          alert('Error al registrarse: ' + error.message);
+          return;
+        }
+        
+        alert('Registro exitoso! Ya puedes iniciar sesión');
+        setRegisterMode(false);
+        
+      } else {
+        // LOGIN
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email: loginEmail,
+          password: loginPassword,
+        });
+        
+        if (error) {
+          alert('Error al iniciar sesión: ' + error.message);
+          return;
+        }
+        
+        setUser(loginEmail);
+        localStorage.setItem('famcontrol_current_user', loginEmail);
+      }
+      
+      setLoginEmail('');
+      setLoginPassword('');
+      
+    } catch (error) {
+      console.error('Error en autenticación:', error);
+      alert('Error inesperado. Intenta de nuevo.');
+    }
   };
 
   const addTransaction = () => {
@@ -276,7 +311,25 @@ export default function FamControl() {
             {darkMode ? <Sun size={20} color="#fbbf24" /> : <Moon size={20} color="#666" />}
           </button>
           <span style={{ fontSize: '0.875rem', color: textSec }}>{user}</span>
-          <button onClick={() => { setUser(null); localStorage.removeItem('famcontrol_current_user'); }} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', backgroundColor: '#ef4444', color: 'white', border: 'none', padding: '0.5rem 1rem', borderRadius: '0.5rem', cursor: 'pointer', fontWeight: '500' }}>
+          <button 
+            onClick={async () => { 
+              await supabase.auth.signOut(); 
+              setUser(null); 
+              localStorage.removeItem('famcontrol_current_user'); 
+            }} 
+            style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '0.5rem', 
+              backgroundColor: '#ef4444', 
+              color: 'white', 
+              border: 'none', 
+              padding: '0.5rem 1rem', 
+              borderRadius: '0.5rem', 
+              cursor: 'pointer', 
+              fontWeight: '500' 
+            }}
+          >
             <LogOut size={18} /> Salir
           </button>
         </div>
