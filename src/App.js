@@ -71,6 +71,15 @@ export default function FamControl() {
     mes: new Date().toISOString().slice(0, 7)
   });
 
+  // Estados para cuentas personalizadas
+  const [accountForm, setAccountForm] = useState({
+    name: '',
+    type: 'banco',
+    icon: '🏦',
+    saldo: 0
+  });
+  const [showAddAccount, setShowAddAccount] = useState(false);
+
   useEffect(() => {
     const checkSession = async () => {
       try {
@@ -98,7 +107,20 @@ export default function FamControl() {
     checkSession();
   }, []);
 
-  
+  // Función para verificar conexión con Supabase
+  const checkSupabaseConnection = async () => {
+    try {
+      const { data, error } = await supabase.from('accounts').select('count').limit(1);
+      if (error) throw error;
+      console.log('✅ Conexión con Supabase establecida');
+      return true;
+    } catch (error) {
+      console.error('❌ Error de conexión con Supabase:', error);
+      alert('Error de conexión con la base de datos. Recarga la página.');
+      return false;
+    }
+  };
+
   const handleLogin = async () => {
     if (!loginEmail || !loginPassword) {
       alert('Por favor completa todos los campos');
@@ -135,6 +157,7 @@ export default function FamControl() {
         
         setUser(loginEmail);
         localStorage.setItem('famcontrol_current_user', loginEmail);
+        await checkSupabaseConnection();
       }
       
       setLoginEmail('');
@@ -146,7 +169,7 @@ export default function FamControl() {
     }
   };
 
-    // Cargar datos del usuario desde Supabase
+  // Cargar datos del usuario desde Supabase
   const loadUserData = async (userId) => {
     try {
       // Cargar cuentas
@@ -215,58 +238,264 @@ export default function FamControl() {
     }
   };
 
-  const addTransaction = () => {
+  const addTransaction = async () => {
     if (!transactionForm.valor || !transactionForm.descripcion) return;
     
-    const newId = editingId || Date.now().toString();
-    const newTransaction = { id: newId, ...transactionForm, registradoPor: user, createdAt: new Date().toISOString() };
+    try {
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
     
-    setTransactions({ ...transactions, [newId]: newTransaction });
+      const newId = editingId || `trans_${Date.now()}`;
+      const newTransaction = { 
+        id: newId, 
+        ...transactionForm, 
+        user_id: currentUser.id,
+        created_at: new Date().toISOString() 
+      };
     
-    if (transactionForm.tipo === 'transferencia' && transactionForm.cuentaDestino) {
-      setAccounts(accounts.map(acc => {
-        if (acc.id === transactionForm.cuenta) return { ...acc, saldo: (acc.saldo || 0) - parseFloat(transactionForm.valor) };
-        if (acc.id === transactionForm.cuentaDestino) return { ...acc, saldo: (acc.saldo || 0) + parseFloat(transactionForm.valor) };
-        return acc;
-      }));
-    } else {
-      setAccounts(accounts.map(acc => {
-        if (acc.id === transactionForm.cuenta) {
-          const change = transactionForm.tipo === 'ingreso' ? parseFloat(transactionForm.valor) : -parseFloat(transactionForm.valor);
-          return { ...acc, saldo: (acc.saldo || 0) + change };
-        }
-        return acc;
-      }));
+      // Guardar en Supabase
+      await supabase
+        .from('transactions')
+        .upsert(newTransaction);
+    
+      // Actualizar estado local
+      setTransactions({ ...transactions, [newId]: newTransaction });
+      
+      // Actualizar saldos de cuentas
+      if (transactionForm.tipo === 'transferencia' && transactionForm.cuentaDestino) {
+        const updatedAccounts = accounts.map(acc => {
+          if (acc.id === transactionForm.cuenta) {
+            const newSaldo = (acc.saldo || 0) - parseFloat(transactionForm.valor);
+            supabase.from('accounts').update({ saldo: newSaldo }).eq('id', acc.id).eq('user_id', currentUser.id);
+            return { ...acc, saldo: newSaldo };
+          }
+          if (acc.id === transactionForm.cuentaDestino) {
+            const newSaldo = (acc.saldo || 0) + parseFloat(transactionForm.valor);
+            supabase.from('accounts').update({ saldo: newSaldo }).eq('id', acc.id).eq('user_id', currentUser.id);
+            return { ...acc, saldo: newSaldo };
+          }
+          return acc;
+        });
+        setAccounts(updatedAccounts);
+      } else {
+        const updatedAccounts = accounts.map(acc => {
+          if (acc.id === transactionForm.cuenta) {
+            const change = transactionForm.tipo === 'ingreso' ? parseFloat(transactionForm.valor) : -parseFloat(transactionForm.valor);
+            const newSaldo = (acc.saldo || 0) + change;
+            supabase.from('accounts').update({ saldo: newSaldo }).eq('id', acc.id).eq('user_id', currentUser.id);
+            return { ...acc, saldo: newSaldo };
+          }
+          return acc;
+        });
+        setAccounts(updatedAccounts);
+      }
+      
+      setTransactionForm({ fecha: new Date().toISOString().split('T')[0], descripcion: '', categoria: 'alimentacion', cuenta: 'efectivo', valor: '', tipo: 'gasto', cuentaDestino: '' });
+      setEditingId(null);
+    } catch (error) {
+      console.error('Error guardando transacción:', error);
+      alert('Error al guardar la transacción');
+    }
+  };
+
+  const addEvent = async () => {
+    if (!eventForm.titulo) {
+      alert('Por favor ingresa un título para el evento');
+      return;
     }
     
-    setTransactionForm({ fecha: new Date().toISOString().split('T')[0], descripcion: '', categoria: 'alimentacion', cuenta: 'efectivo', valor: '', tipo: 'gasto', cuentaDestino: '' });
-    setEditingId(null);
+    try {
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      if (!currentUser) throw new Error('No hay usuario autenticado');
+      
+      const newId = editingEventId || `event_${Date.now()}`;
+      const newEvent = { 
+        id: newId, 
+        ...eventForm, 
+        user_id: currentUser.id,
+        created_at: new Date().toISOString() 
+      };
+      
+      // Guardar en Supabase
+      const { error } = await supabase
+        .from('events')
+        .upsert(newEvent);
+      
+      if (error) throw error;
+      
+      // Actualizar estado local
+      setEvents({ ...events, [newId]: newEvent });
+      setEventForm({ categoria: 'Cita', titulo: '', fechaInicio: new Date().toISOString().split('T')[0], ubicacion: '' });
+      setEditingEventId(null);
+    } catch (error) {
+      console.error('Error guardando evento:', error);
+      alert('Error al guardar el evento: ' + error.message);
+    }
   };
 
-  const addEvent = () => {
-    if (!eventForm.titulo) return;
-    const newId = editingEventId || Date.now().toString();
-    setEvents({ ...events, [newId]: { id: newId, ...eventForm } });
-    setEventForm({ categoria: 'Cita', titulo: '', fechaInicio: new Date().toISOString().split('T')[0], ubicacion: '' });
-    setEditingEventId(null);
+  const addShoppingItem = async () => {
+    if (!shoppingForm.item) {
+      alert('Por favor ingresa un nombre para el item');
+      return;
+    }
+    
+    try {
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      if (!currentUser) throw new Error('No hay usuario autenticado');
+      
+      const newId = `shop_${Date.now()}`;
+      const newItem = { 
+        id: newId, 
+        ...shoppingForm, 
+        user_id: currentUser.id,
+        created_at: new Date().toISOString() 
+      };
+      
+      // Guardar en Supabase
+      const { error } = await supabase
+        .from('shopping_list')
+        .upsert(newItem);
+      
+      if (error) throw error;
+      
+      // Actualizar estado local
+      setShoppingList({ ...shoppingList, [newId]: newItem });
+      setShoppingForm({ item: '', cantidad: 1, categoria: 'alimentacion', precio: '', comprado: false });
+    } catch (error) {
+      console.error('Error guardando item de compra:', error);
+      alert('Error al guardar el item: ' + error.message);
+    }
   };
 
-  const addShoppingItem = () => {
-    if (!shoppingForm.item) return;
-    const newId = Date.now().toString();
-    setShoppingList({ ...shoppingList, [newId]: { ...shoppingForm, id: newId } });
-    setShoppingForm({ item: '', cantidad: 1, categoria: 'alimentacion', precio: '', comprado: false });
+  const toggleShoppingItem = async (id) => {
+    try {
+      const updatedItem = { ...shoppingList[id], comprado: !shoppingList[id].comprado };
+      
+      // Actualizar en Supabase
+      const { error } = await supabase
+        .from('shopping_list')
+        .update({ comprado: updatedItem.comprado })
+        .eq('id', id);
+      
+      if (error) throw error;
+      
+      // Actualizar estado local
+      setShoppingList({ ...shoppingList, [id]: updatedItem });
+    } catch (error) {
+      console.error('Error actualizando item:', error);
+      alert('Error al actualizar el item: ' + error.message);
+    }
   };
 
-  const toggleShoppingItem = (id) => {
-    setShoppingList({ ...shoppingList, [id]: { ...shoppingList[id], comprado: !shoppingList[id].comprado } });
+  const addBudget = async () => {
+    if (!budgetForm.monto) {
+      alert('Por favor ingresa un monto para el presupuesto');
+      return;
+    }
+    
+    try {
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      if (!currentUser) throw new Error('No hay usuario autenticado');
+      
+      const key = `${budgetForm.categoria}-${budgetForm.mes}`;
+      const newBudget = { 
+        id: key, 
+        ...budgetForm, 
+        user_id: currentUser.id,
+        created_at: new Date().toISOString() 
+      };
+      
+      // Guardar en Supabase
+      const { error } = await supabase
+        .from('budgets')
+        .upsert(newBudget);
+      
+      if (error) throw error;
+      
+      // Actualizar estado local
+      setBudgets({ ...budgets, [key]: newBudget });
+      setBudgetForm({ categoria: 'alimentacion', monto: '', mes: new Date().toISOString().slice(0, 7) });
+    } catch (error) {
+      console.error('Error guardando presupuesto:', error);
+      alert('Error al guardar el presupuesto: ' + error.message);
+    }
   };
 
-  const addBudget = () => {
-    if (!budgetForm.monto) return;
-    const key = `${budgetForm.categoria}-${budgetForm.mes}`;
-    setBudgets({ ...budgets, [key]: budgetForm });
-    setBudgetForm({ categoria: 'alimentacion', monto: '', mes: new Date().toISOString().slice(0, 7) });
+  // Funciones para cuentas personalizadas
+  const addAccount = async () => {
+    if (!accountForm.name) {
+      alert('Por favor ingresa un nombre para la cuenta');
+      return;
+    }
+    
+    try {
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      if (!currentUser) throw new Error('No hay usuario autenticado');
+      
+      const newId = `account_${Date.now()}`;
+      const newAccount = {
+        id: newId,
+        name: accountForm.name,
+        icon: accountForm.icon,
+        tipo: accountForm.type,
+        saldo: parseFloat(accountForm.saldo) || 0,
+        user_id: currentUser.id,
+        created_at: new Date().toISOString()
+      };
+      
+      // Guardar en Supabase
+      const { error } = await supabase
+        .from('accounts')
+        .upsert(newAccount);
+      
+      if (error) throw error;
+      
+      // Actualizar estado local
+      setAccounts([...accounts, newAccount]);
+      setAccountForm({ name: '', type: 'banco', icon: '🏦', saldo: 0 });
+      setShowAddAccount(false);
+    } catch (error) {
+      console.error('Error guardando cuenta:', error);
+      alert('Error al guardar la cuenta: ' + error.message);
+    }
+  };
+
+  const deleteAccount = async (accountId) => {
+    // Verificar si la cuenta tiene transacciones
+    const hasTransactions = Object.values(transactions).some(
+      t => t.cuenta === accountId || t.cuentaDestino === accountId
+    );
+    
+    if (hasTransactions) {
+      const confirm = window.confirm(
+        'Esta cuenta tiene transacciones asociadas. ¿Estás seguro de eliminarla? Las transacciones no se eliminarán.'
+      );
+      if (!confirm) return;
+    }
+    
+    try {
+      // Eliminar de Supabase
+      await supabase
+        .from('accounts')
+        .delete()
+        .eq('id', accountId);
+      
+      // Actualizar estado local
+      setAccounts(accounts.filter(acc => acc.id !== accountId));
+    } catch (error) {
+      console.error('Error eliminando cuenta:', error);
+      alert('Error al eliminar la cuenta: ' + error.message);
+    }
+  };
+
+  const getIconForType = (type) => {
+    const icons = {
+      banco: '🏦',
+      tarjeta: '💳',
+      efectivo: '💵',
+      billetera: '👛',
+      ahorro: '🐷'
+    };
+    return icons[type] || '💰';
   };
 
   const exportToCSV = () => {
@@ -467,13 +696,154 @@ export default function FamControl() {
 
         {currentTab === 'cuentas' && (
           <div style={{ backgroundColor: card, border: `1px solid ${border}`, padding: '1.5rem', borderRadius: '1rem' }}>
-            <h2 style={{ color: text, margin: '0 0 1.5rem 0' }}>Mis Cuentas</h2>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+              <h2 style={{ color: text, margin: 0 }}>Mis Cuentas</h2>
+              <button 
+                onClick={() => setShowAddAccount(!showAddAccount)} 
+                style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '0.5rem', 
+                  padding: '0.75rem 1rem', 
+                  backgroundColor: '#10b981', 
+                  color: 'white', 
+                  border: 'none', 
+                  borderRadius: '0.5rem', 
+                  cursor: 'pointer', 
+                  fontWeight: '600' 
+                }}
+              >
+                <Plus size={18} /> Nueva Cuenta
+              </button>
+            </div>
+
+            {showAddAccount && (
+              <div style={{ 
+                backgroundColor: darkMode ? '#2a2a2a' : '#f9f9f9', 
+                border: `1px solid ${border}`, 
+                padding: '1.5rem', 
+                borderRadius: '0.75rem', 
+                marginBottom: '1.5rem' 
+              }}>
+                <h3 style={{ color: text, margin: '0 0 1rem 0' }}>Agregar Nueva Cuenta</h3>
+                <input 
+                  type="text" 
+                  placeholder="Nombre (ej: Bancolombia Ahorros)" 
+                  value={accountForm.name} 
+                  onChange={(e) => setAccountForm({ ...accountForm, name: e.target.value })} 
+                  style={{ 
+                    width: '100%', 
+                    padding: '0.75rem', 
+                    border: `1px solid ${border}`, 
+                    borderRadius: '0.5rem', 
+                    backgroundColor: input, 
+                    color: text, 
+                    marginBottom: '1rem', 
+                    boxSizing: 'border-box' 
+                  }} 
+                />
+                <select 
+                  value={accountForm.type} 
+                  onChange={(e) => setAccountForm({ ...accountForm, type: e.target.value, icon: getIconForType(e.target.value) })} 
+                  style={{ 
+                    width: '100%', 
+                    padding: '0.75rem', 
+                    border: `1px solid ${border}`, 
+                    borderRadius: '0.5rem', 
+                    backgroundColor: input, 
+                    color: text, 
+                    marginBottom: '1rem', 
+                    boxSizing: 'border-box' 
+                  }}
+                >
+                  <option value="banco">🏦 Banco</option>
+                  <option value="tarjeta">💳 Tarjeta de Crédito</option>
+                  <option value="efectivo">💵 Efectivo</option>
+                  <option value="billetera">👛 Billetera Digital</option>
+                  <option value="ahorro">🐷 Cuenta de Ahorro</option>
+                </select>
+                <input 
+                  type="number" 
+                  placeholder="Saldo inicial" 
+                  value={accountForm.saldo} 
+                  onChange={(e) => setAccountForm({ ...accountForm, saldo: e.target.value })} 
+                  style={{ 
+                    width: '100%', 
+                    padding: '0.75rem', 
+                    border: `1px solid ${border}`, 
+                    borderRadius: '0.5rem', 
+                    backgroundColor: input, 
+                    color: text, 
+                    marginBottom: '1rem', 
+                    boxSizing: 'border-box' 
+                  }} 
+                />
+                <div style={{ display: 'flex', gap: '1rem' }}>
+                  <button 
+                    onClick={addAccount} 
+                    style={{ 
+                      flex: 1, 
+                      padding: '0.75rem', 
+                      backgroundColor: '#10b981', 
+                      color: 'white', 
+                      border: 'none', 
+                      borderRadius: '0.5rem', 
+                      fontWeight: '600', 
+                      cursor: 'pointer' 
+                    }}
+                  >
+                    Guardar
+                  </button>
+                  <button 
+                    onClick={() => setShowAddAccount(false)} 
+                    style={{ 
+                      flex: 1, 
+                      padding: '0.75rem', 
+                      backgroundColor: '#6b7280', 
+                      color: 'white', 
+                      border: 'none', 
+                      borderRadius: '0.5rem', 
+                      fontWeight: '600', 
+                      cursor: 'pointer' 
+                    }}
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1rem' }}>
               {accounts.map(acc => (
-                <div key={acc.id} style={{ padding: '1.5rem', backgroundColor: darkMode ? '#2a2a2a' : '#f9f9f9', borderRadius: '0.75rem', border: `2px solid ${border}` }}>
+                <div key={acc.id} style={{ 
+                  padding: '1.5rem', 
+                  backgroundColor: darkMode ? '#2a2a2a' : '#f9f9f9', 
+                  borderRadius: '0.75rem', 
+                  border: `2px solid ${border}`,
+                  position: 'relative'
+                }}>
+                  {!['efectivo', 'banco', 'tarjeta'].includes(acc.id) && (
+                    <button 
+                      onClick={() => deleteAccount(acc.id)} 
+                      style={{ 
+                        position: 'absolute', 
+                        top: '0.75rem', 
+                        right: '0.75rem', 
+                        background: 'none', 
+                        border: 'none', 
+                        color: '#ef4444', 
+                        cursor: 'pointer' 
+                      }}
+                    >
+                      <Trash2 size={18} />
+                    </button>
+                  )}
                   <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>{acc.icon}</div>
                   <h3 style={{ color: text, margin: '0 0 0.5rem 0' }}>{acc.name}</h3>
-                  <p style={{ fontSize: '1.75rem', fontWeight: 'bold', margin: 0, color: acc.saldo >= 0 ? '#10b981' : '#ef4444' }}>${(acc.saldo || 0).toLocaleString()}</p>
+                  {acc.tipo && <p style={{ fontSize: '0.75rem', color: textSec, margin: '0 0 0.5rem 0' }}>{acc.tipo}</p>}
+                  <p style={{ fontSize: '1.75rem', fontWeight: 'bold', margin: 0, color: acc.saldo >= 0 ? '#10b981' : '#ef4444' }}>
+                    ${(acc.saldo || 0).toLocaleString()}
+                  </p>
                 </div>
               ))}
             </div>
@@ -541,7 +911,17 @@ export default function FamControl() {
                         <span style={{ fontWeight: 'bold', color: t.tipo === 'ingreso' ? '#10b981' : '#ef4444' }}>
                           {t.tipo === 'ingreso' ? '+' : '-'}${parseFloat(t.valor).toLocaleString()}
                         </span>
-                        <button onClick={() => { const newTx = {...transactions}; delete newTx[t.id]; setTransactions(newTx); }} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer' }}>
+                        <button onClick={async () => { 
+                          try {
+                            await supabase.from('transactions').delete().eq('id', t.id);
+                            const newTx = {...transactions}; 
+                            delete newTx[t.id]; 
+                            setTransactions(newTx); 
+                          } catch (error) {
+                            console.error('Error eliminando transacción:', error);
+                            alert('Error al eliminar la transacción');
+                          }
+                        }} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer' }}>
                           <Trash2 size={16} />
                         </button>
                       </div>
@@ -631,7 +1011,17 @@ export default function FamControl() {
                             <div style={{ fontSize: '0.75rem', color: textSec }}>Cantidad: {item.cantidad} • {cat?.icon} {cat?.name} • ${parseFloat(item.precio || 0).toLocaleString()}</div>
                           </div>
                         </div>
-                        <button onClick={() => { const newList = {...shoppingList}; delete newList[item.id]; setShoppingList(newList); }} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer' }}>
+                        <button onClick={async () => { 
+                          try {
+                            await supabase.from('shopping_list').delete().eq('id', item.id);
+                            const newList = {...shoppingList}; 
+                            delete newList[item.id]; 
+                            setShoppingList(newList); 
+                          } catch (error) {
+                            console.error('Error eliminando item:', error);
+                            alert('Error al eliminar el item');
+                          }
+                        }} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer' }}>
                           <Trash2 size={16} />
                         </button>
                       </div>
@@ -674,7 +1064,17 @@ export default function FamControl() {
                       {e.ubicacion && <p style={{ color: textSec, margin: '0.25rem 0', fontSize: '0.875rem' }}>📍 {e.ubicacion}</p>}
                     </div>
                     <div style={{ display: 'flex', gap: '0.5rem' }}>
-                      <button onClick={() => { const newEvents = {...events}; delete newEvents[e.id]; setEvents(newEvents); }} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer' }}>
+                      <button onClick={async () => { 
+                        try {
+                          await supabase.from('events').delete().eq('id', e.id);
+                          const newEvents = {...events}; 
+                          delete newEvents[e.id]; 
+                          setEvents(newEvents); 
+                        } catch (error) {
+                          console.error('Error eliminando evento:', error);
+                          alert('Error al eliminar el evento');
+                        }
+                      }} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer' }}>
                         <Trash2 size={16} />
                       </button>
                     </div>
