@@ -1,6 +1,6 @@
 import { supabase } from './supabaseClient';
 import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, Edit2, LogOut, BarChart3, Calendar, DollarSign, Home, Moon, Sun, ShoppingCart, Wallet, TrendingUp, ArrowRightLeft, Download, Upload } from 'lucide-react';
+import { Plus, Trash2, Edit2, LogOut, BarChart3, Calendar, DollarSign, Home, Moon, Sun, ShoppingCart, Wallet, TrendingUp, ArrowRightLeft, Download, Upload, Target, Star } from 'lucide-react';
 import { PieChart, Pie, BarChart, Bar, ResponsiveContainer, Cell, Tooltip, XAxis, YAxis } from 'recharts';
 
 const DEFAULT_CATEGORIES = [
@@ -35,6 +35,17 @@ export default function FamControl() {
   const [transactions, setTransactions] = useState({});
   const [events, setEvents] = useState({});
   
+  // NUEVO: Estado para Metas y Sueños
+  const [goals, setGoals] = useState({});
+  const [goalForm, setGoalForm] = useState({
+    name: '',
+    targetAmount: '',
+    targetDate: '',
+    currentSaved: '0',
+    category: 'viaje'
+  });
+  const [showAddGoal, setShowAddGoal] = useState(false);
+  
   const [transactionForm, setTransactionForm] = useState({
     fecha: new Date().toISOString().split('T')[0],
     descripcion: '',
@@ -49,7 +60,6 @@ export default function FamControl() {
   const [filterPeriod, setFilterPeriod] = useState('mes');
   const [filterCategory, setFilterCategory] = useState('todas');
 
-  // CORREGIDO: usar fecha_inicio en lugar de fechaInicio
   const [eventForm, setEventForm] = useState({
     categoria: 'Cita',
     titulo: '',
@@ -72,7 +82,6 @@ export default function FamControl() {
     mes: new Date().toISOString().slice(0, 7)
   });
 
-  // Estados para cuentas personalizadas
   const [accountForm, setAccountForm] = useState({
     name: '',
     type: 'banco',
@@ -116,9 +125,7 @@ export default function FamControl() {
           setUser(userEmail);
           localStorage.setItem('famcontrol_current_user', userEmail);
         
-          // Cargar datos desde Supabase
           await loadUserData(userId);
-          // Llamar a debugSync para verificar sincronización
           await debugSync(userId);
         }
       } catch (error) {
@@ -129,7 +136,6 @@ export default function FamControl() {
     checkSession();
   }, []);
 
-  // Función para verificar conexión con Supabase
   const checkSupabaseConnection = async () => {
     try {
       const { data, error } = await supabase.from('accounts').select('count').limit(1);
@@ -151,7 +157,6 @@ export default function FamControl() {
 
     try {
       if (registerMode) {
-        // REGISTRO
         const { data, error } = await supabase.auth.signUp({
           email: loginEmail,
           password: loginPassword,
@@ -166,7 +171,6 @@ export default function FamControl() {
         setRegisterMode(false);
         
       } else {
-        // LOGIN
         const { data, error } = await supabase.auth.signInWithPassword({
           email: loginEmail,
           password: loginPassword,
@@ -224,7 +228,7 @@ export default function FamControl() {
         setAccounts(DEFAULT_ACCOUNTS);
       }
 
-      // Cargar transacciones
+      // Cargar transacciones - CORREGIDO: mapear cuenta_destino
       const { data: transData, error: transError } = await supabase
         .from('transactions')
         .select('*')
@@ -236,7 +240,12 @@ export default function FamControl() {
       }
     
       const transObj = {};
-      transData?.forEach(t => { transObj[t.id] = t; });
+      transData?.forEach(t => { 
+        transObj[t.id] = {
+          ...t,
+          cuentaDestino: t.cuenta_destino // Mapear desde la base de datos
+        }; 
+      });
       console.log('✅ Transacciones cargadas:', Object.keys(transObj).length);
       setTransactions(transObj);
 
@@ -259,7 +268,7 @@ export default function FamControl() {
       console.log('✅ Presupuestos cargados:', Object.keys(budgetObj).length);
       setBudgets(budgetObj);
 
-      // Cargar eventos - CORREGIDO: usar fecha_inicio directamente
+      // Cargar eventos
       const { data: eventData, error: eventError } = await supabase
         .from('events')
         .select('*')
@@ -274,7 +283,6 @@ export default function FamControl() {
       eventData?.forEach(e => { 
         eventObj[e.id] = {
           ...e,
-          // Mapear fecha_inicio de la base de datos al estado local
           fecha_inicio: e.fecha_inicio
         }; 
       });
@@ -297,6 +305,22 @@ export default function FamControl() {
       console.log('✅ Items de compra cargados:', Object.keys(shoppingObj).length);
       setShoppingList(shoppingObj);
 
+      // NUEVO: Cargar metas
+      const { data: goalsData, error: goalsError } = await supabase
+        .from('goals')
+        .select('*')
+        .eq('user_id', userId);
+      
+      if (goalsError) {
+        console.error('Error cargando metas:', goalsError);
+        // Si la tabla no existe, no es error crítico
+      } else {
+        const goalsObj = {};
+        goalsData?.forEach(g => { goalsObj[g.id] = g; });
+        console.log('✅ Metas cargadas:', Object.keys(goalsObj).length);
+        setGoals(goalsObj);
+      }
+
       console.log('🎉 Todos los datos cargados exitosamente');
 
     } catch (error) {
@@ -305,6 +329,7 @@ export default function FamControl() {
     }
   };
 
+  // CORREGIDO: Función addTransaction con cuenta_destino
   const addTransaction = async () => {
     if (!transactionForm.valor || !transactionForm.descripcion) {
       alert('Por favor completa descripción y valor');
@@ -316,23 +341,40 @@ export default function FamControl() {
       if (!currentUser) throw new Error('No hay usuario autenticado');
     
       const newId = editingId || `trans_${Date.now()}`;
-      const newTransaction = { 
-        id: newId, 
-        ...transactionForm, 
-        user_id: currentUser.id,
+      
+      // PREPARAR DATOS PARA SUPABASE - CORREGIDO
+      const transactionData = {
+        id: newId,
+        fecha: transactionForm.fecha,
+        descripcion: transactionForm.descripcion,
+        categoria: transactionForm.categoria,
+        cuenta: transactionForm.cuenta,
         valor: parseFloat(transactionForm.valor),
-        created_at: new Date().toISOString() 
+        tipo: transactionForm.tipo,
+        user_id: currentUser.id,
+        created_at: new Date().toISOString()
       };
+      
+      // Solo agregar cuenta_destino si es una transferencia
+      if (transactionForm.tipo === 'transferencia' && transactionForm.cuentaDestino) {
+        transactionData.cuenta_destino = transactionForm.cuentaDestino;
+      }
     
       // Guardar en Supabase
       const { error } = await supabase
         .from('transactions')
-        .upsert(newTransaction);
+        .upsert(transactionData);
       
       if (error) throw error;
     
-      // Actualizar estado local
-      setTransactions(prev => ({ ...prev, [newId]: newTransaction }));
+      // Actualizar estado local (mantener cuentaDestino para el estado local)
+      setTransactions(prev => ({ 
+        ...prev, 
+        [newId]: {
+          ...transactionData,
+          cuentaDestino: transactionForm.cuentaDestino // Mantener para estado local
+        }
+      }));
       
       // Actualizar saldos de cuentas
       if (transactionForm.tipo === 'transferencia' && transactionForm.cuentaDestino) {
@@ -385,7 +427,6 @@ export default function FamControl() {
     }
   };
 
-  // CORREGIDO: usar fecha_inicio
   const addEvent = async () => {
     if (!eventForm.titulo) {
       alert('Por favor ingresa un título para el evento');
@@ -401,7 +442,7 @@ export default function FamControl() {
         id: newId, 
         titulo: eventForm.titulo,
         categoria: eventForm.categoria,
-        fecha_inicio: eventForm.fecha_inicio, // CORREGIDO
+        fecha_inicio: eventForm.fecha_inicio,
         ubicacion: eventForm.ubicacion,
         user_id: currentUser.id,
         created_at: new Date().toISOString() 
@@ -409,19 +450,17 @@ export default function FamControl() {
       
       console.log('🔄 Guardando evento:', newEvent);
       
-      // Guardar en Supabase
       const { error } = await supabase
         .from('events')
         .upsert(newEvent);
       
       if (error) throw error;
       
-      // Actualizar estado local
       setEvents(prev => ({ ...prev, [newId]: newEvent }));
       setEventForm({ 
         categoria: 'Cita', 
         titulo: '', 
-        fecha_inicio: new Date().toISOString().split('T')[0], // CORREGIDO
+        fecha_inicio: new Date().toISOString().split('T')[0],
         ubicacion: '' 
       });
       setEditingEventId(null);
@@ -451,14 +490,12 @@ export default function FamControl() {
         created_at: new Date().toISOString() 
       };
       
-      // Guardar en Supabase
       const { error } = await supabase
         .from('shopping_list')
         .upsert(newItem);
       
       if (error) throw error;
       
-      // Actualizar estado local
       setShoppingList(prev => ({ ...prev, [newId]: newItem }));
       setShoppingForm({ item: '', cantidad: 1, categoria: 'alimentacion', precio: '', comprado: false });
     } catch (error) {
@@ -471,7 +508,6 @@ export default function FamControl() {
     try {
       const updatedItem = { ...shoppingList[id], comprado: !shoppingList[id].comprado };
       
-      // Actualizar en Supabase
       const { error } = await supabase
         .from('shopping_list')
         .update({ comprado: updatedItem.comprado })
@@ -479,7 +515,6 @@ export default function FamControl() {
       
       if (error) throw error;
       
-      // Actualizar estado local
       setShoppingList(prev => ({ ...prev, [id]: updatedItem }));
     } catch (error) {
       console.error('Error actualizando item:', error);
@@ -505,14 +540,12 @@ export default function FamControl() {
         created_at: new Date().toISOString() 
       };
       
-      // Guardar en Supabase
       const { error } = await supabase
         .from('budgets')
         .upsert(newBudget);
       
       if (error) throw error;
       
-      // Actualizar estado local
       setBudgets(prev => ({ ...prev, [key]: newBudget }));
       setBudgetForm({ categoria: 'alimentacion', monto: '', mes: new Date().toISOString().slice(0, 7) });
     } catch (error) {
@@ -521,7 +554,102 @@ export default function FamControl() {
     }
   };
 
-  // Funciones para cuentas personalizadas
+  // NUEVO: Funciones para Metas y Sueños
+  const addGoal = async () => {
+    if (!goalForm.name || !goalForm.targetAmount) {
+      alert('Por favor ingresa nombre y monto objetivo para la meta');
+      return;
+    }
+    
+    try {
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      if (!currentUser) throw new Error('No hay usuario autenticado');
+      
+      const newId = `goal_${Date.now()}`;
+      const newGoal = {
+        id: newId,
+        name: goalForm.name,
+        target_amount: parseFloat(goalForm.targetAmount),
+        target_date: goalForm.targetDate,
+        current_saved: parseFloat(goalForm.currentSaved) || 0,
+        category: goalForm.category,
+        user_id: currentUser.id,
+        created_at: new Date().toISOString()
+      };
+      
+      // Guardar en Supabase
+      const { error } = await supabase
+        .from('goals')
+        .upsert(newGoal);
+      
+      if (error) throw error;
+      
+      // Actualizar estado local
+      setGoals(prev => ({ ...prev, [newId]: newGoal }));
+      setGoalForm({ 
+        name: '', 
+        targetAmount: '', 
+        targetDate: '', 
+        currentSaved: '0',
+        category: 'viaje'
+      });
+      setShowAddGoal(false);
+      
+      console.log('✅ Meta guardada exitosamente');
+    } catch (error) {
+      console.error('❌ Error guardando meta:', error);
+      alert('Error al guardar la meta: ' + error.message);
+    }
+  };
+
+  const deleteGoal = async (goalId) => {
+    try {
+      await supabase
+        .from('goals')
+        .delete()
+        .eq('id', goalId);
+      
+      setGoals(prev => {
+        const newGoals = { ...prev };
+        delete newGoals[goalId];
+        return newGoals;
+      });
+    } catch (error) {
+      console.error('Error eliminando meta:', error);
+      alert('Error al eliminar la meta: ' + error.message);
+    }
+  };
+
+  // Calcular progreso de metas
+  const getGoalProgress = (goal) => {
+    const target = parseFloat(goal.target_amount) || 1;
+    const saved = parseFloat(goal.current_saved) || 0;
+    const percentage = (saved / target) * 100;
+    return {
+      percentage: Math.min(percentage, 100),
+      remaining: target - saved,
+      saved: saved,
+      target: target
+    };
+  };
+
+  // Calcular ahorro mensual disponible
+  const getMonthlySavings = () => {
+    const currentMonth = new Date().toISOString().slice(0, 7);
+    const monthTx = Object.values(transactions).filter(t => t.fecha.startsWith(currentMonth));
+    
+    let ingresos = 0;
+    let gastos = 0;
+    
+    monthTx.forEach(t => {
+      const valor = parseFloat(t.valor) || 0;
+      if (t.tipo === 'ingreso') ingresos += valor;
+      else if (t.tipo === 'gasto') gastos += valor;
+    });
+    
+    return ingresos - gastos;
+  };
+
   const addAccount = async () => {
     if (!accountForm.name) {
       alert('Por favor ingresa un nombre para la cuenta');
@@ -543,14 +671,12 @@ export default function FamControl() {
         created_at: new Date().toISOString()
       };
       
-      // Guardar en Supabase
       const { error } = await supabase
         .from('accounts')
         .upsert(newAccount);
       
       if (error) throw error;
       
-      // Actualizar estado local
       setAccounts(prev => [...prev, newAccount]);
       setAccountForm({ name: '', type: 'banco', icon: '🏦', saldo: 0 });
       setShowAddAccount(false);
@@ -561,7 +687,6 @@ export default function FamControl() {
   };
 
   const deleteAccount = async (accountId) => {
-    // Verificar si la cuenta tiene transacciones
     const hasTransactions = Object.values(transactions).some(
       t => t.cuenta === accountId || t.cuentaDestino === accountId
     );
@@ -574,13 +699,11 @@ export default function FamControl() {
     }
     
     try {
-      // Eliminar de Supabase
       await supabase
         .from('accounts')
         .delete()
         .eq('id', accountId);
       
-      // Actualizar estado local
       setAccounts(prev => prev.filter(acc => acc.id !== accountId));
     } catch (error) {
       console.error('Error eliminando cuenta:', error);
@@ -597,6 +720,19 @@ export default function FamControl() {
       ahorro: '🐷'
     };
     return icons[type] || '💰';
+  };
+
+  const getGoalIcon = (category) => {
+    const icons = {
+      viaje: '✈️',
+      casa: '🏠',
+      auto: '🚗',
+      educacion: '🎓',
+      salud: '⚕️',
+      tecnologia: '💻',
+      otros: '🎯'
+    };
+    return icons[category] || '🎯';
   };
 
   const exportToCSV = () => {
@@ -696,6 +832,7 @@ export default function FamControl() {
   const monthlyTrend = getMonthlyTrend();
   const budgetStatus = getBudgetStatus();
   const totalBalance = accounts.reduce((sum, acc) => sum + (acc.saldo || 0), 0);
+  const monthlySavings = getMonthlySavings();
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: bg }}>
@@ -766,6 +903,10 @@ export default function FamControl() {
                 <p style={{ color: textSec, fontSize: '0.875rem', margin: '0 0 0.5rem 0' }}>Gastos (mes)</p>
                 <p style={{ fontSize: '2rem', fontWeight: 'bold', margin: 0, color: '#ef4444' }}>${gastos.toLocaleString()}</p>
               </div>
+              <div style={{ backgroundColor: card, border: `1px solid ${border}`, padding: '1.5rem', borderRadius: '1rem' }}>
+                <p style={{ color: textSec, fontSize: '0.875rem', margin: '0 0 0.5rem 0' }}>Ahorro Mensual</p>
+                <p style={{ fontSize: '2rem', fontWeight: 'bold', margin: 0, color: monthlySavings >= 0 ? '#10b981' : '#ef4444' }}>${monthlySavings.toLocaleString()}</p>
+              </div>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
@@ -792,6 +933,61 @@ export default function FamControl() {
                 ))}
               </div>
             </div>
+
+            {/* NUEVO: Metas Destacadas en Home */}
+            {Object.values(goals).length > 0 && (
+              <div style={{ marginTop: '1.5rem' }}>
+                <div style={{ backgroundColor: card, border: `1px solid ${border}`, padding: '1.5rem', borderRadius: '1rem' }}>
+                  <h2 style={{ color: text, margin: '0 0 1rem 0', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <Target size={20} /> Mis Metas Destacadas
+                  </h2>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1rem' }}>
+                    {Object.values(goals).slice(0, 3).map(goal => {
+                      const progress = getGoalProgress(goal);
+                      return (
+                        <div key={goal.id} style={{ 
+                          padding: '1.5rem', 
+                          backgroundColor: darkMode ? '#2a2a2a' : '#f9f9f9', 
+                          borderRadius: '0.75rem', 
+                          border: `2px solid ${border}`,
+                          position: 'relative'
+                        }}>
+                          <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>{getGoalIcon(goal.category)}</div>
+                          <h3 style={{ color: text, margin: '0 0 0.5rem 0' }}>{goal.name}</h3>
+                          <div style={{ width: '100%', height: '8px', backgroundColor: border, borderRadius: '4px', overflow: 'hidden', marginBottom: '0.5rem' }}>
+                            <div style={{ 
+                              width: `${progress.percentage}%`, 
+                              height: '100%', 
+                              backgroundColor: progress.percentage >= 100 ? '#10b981' : '#3b82f6',
+                              transition: 'width 0.3s' 
+                            }}></div>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.875rem', color: textSec }}>
+                            <span>${progress.saved.toLocaleString()} / ${progress.target.toLocaleString()}</span>
+                            <span>{progress.percentage.toFixed(0)}%</span>
+                          </div>
+                          {progress.percentage >= 100 && (
+                            <div style={{ 
+                              position: 'absolute', 
+                              top: '0.75rem', 
+                              right: '0.75rem', 
+                              background: '#10b981', 
+                              color: 'white', 
+                              padding: '0.25rem 0.5rem', 
+                              borderRadius: '0.25rem', 
+                              fontSize: '0.75rem', 
+                              fontWeight: '600' 
+                            }}>
+                              ¡Logrado! 🎉
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -1035,42 +1231,324 @@ export default function FamControl() {
         )}
 
         {currentTab === 'presupuestos' && (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '1.5rem' }}>
-            <div style={{ backgroundColor: card, border: `1px solid ${border}`, padding: '1.5rem', borderRadius: '1rem', height: 'fit-content' }}>
-              <h2 style={{ color: text, margin: '0 0 1rem 0' }}>Nuevo Presupuesto</h2>
-              <select value={budgetForm.categoria} onChange={(e) => setBudgetForm({ ...budgetForm, categoria: e.target.value })} style={{ width: '100%', padding: '0.75rem', border: `1px solid ${border}`, borderRadius: '0.5rem', backgroundColor: input, color: text, marginBottom: '1rem', boxSizing: 'border-box' }}>
-                {categories.map(cat => <option key={cat.id} value={cat.id}>{cat.icon} {cat.name}</option>)}
-              </select>
-              <input type="month" value={budgetForm.mes} onChange={(e) => setBudgetForm({ ...budgetForm, mes: e.target.value })} style={{ width: '100%', padding: '0.75rem', border: `1px solid ${border}`, borderRadius: '0.5rem', backgroundColor: input, color: text, marginBottom: '1rem', boxSizing: 'border-box' }} />
-              <input type="number" placeholder="Monto presupuesto" value={budgetForm.monto} onChange={(e) => setBudgetForm({ ...budgetForm, monto: e.target.value })} style={{ width: '100%', padding: '0.75rem', border: `1px solid ${border}`, borderRadius: '0.5rem', backgroundColor: input, color: text, marginBottom: '1rem', boxSizing: 'border-box' }} />
-              <button onClick={addBudget} style={{ width: '100%', padding: '0.75rem', backgroundColor: '#7c3aed', color: 'white', border: 'none', borderRadius: '0.5rem', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
-                <Plus size={18} />Crear Presupuesto
-              </button>
+          <div>
+            {/* Sección de Presupuestos Existente */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '1.5rem', marginBottom: '2rem' }}>
+              <div style={{ backgroundColor: card, border: `1px solid ${border}`, padding: '1.5rem', borderRadius: '1rem', height: 'fit-content' }}>
+                <h2 style={{ color: text, margin: '0 0 1rem 0' }}>Nuevo Presupuesto</h2>
+                <select value={budgetForm.categoria} onChange={(e) => setBudgetForm({ ...budgetForm, categoria: e.target.value })} style={{ width: '100%', padding: '0.75rem', border: `1px solid ${border}`, borderRadius: '0.5rem', backgroundColor: input, color: text, marginBottom: '1rem', boxSizing: 'border-box' }}>
+                  {categories.map(cat => <option key={cat.id} value={cat.id}>{cat.icon} {cat.name}</option>)}
+                </select>
+                <input type="month" value={budgetForm.mes} onChange={(e) => setBudgetForm({ ...budgetForm, mes: e.target.value })} style={{ width: '100%', padding: '0.75rem', border: `1px solid ${border}`, borderRadius: '0.5rem', backgroundColor: input, color: text, marginBottom: '1rem', boxSizing: 'border-box' }} />
+                <input type="number" placeholder="Monto presupuesto" value={budgetForm.monto} onChange={(e) => setBudgetForm({ ...budgetForm, monto: e.target.value })} style={{ width: '100%', padding: '0.75rem', border: `1px solid ${border}`, borderRadius: '0.5rem', backgroundColor: input, color: text, marginBottom: '1rem', boxSizing: 'border-box' }} />
+                <button onClick={addBudget} style={{ width: '100%', padding: '0.75rem', backgroundColor: '#7c3aed', color: 'white', border: 'none', borderRadius: '0.5rem', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+                  <Plus size={18} />Crear Presupuesto
+                </button>
+              </div>
+
+              <div style={{ backgroundColor: card, border: `1px solid ${border}`, padding: '1.5rem', borderRadius: '1rem' }}>
+                <h2 style={{ color: text, margin: '0 0 1.5rem 0' }}>Estado de Presupuestos</h2>
+                {budgetStatus.length > 0 ? (
+                  <div style={{ display: 'grid', gap: '1rem' }}>
+                    {budgetStatus.map(b => (
+                      <div key={b.categoria} style={{ padding: '1.5rem', backgroundColor: darkMode ? '#2a2a2a' : '#f9f9f9', borderRadius: '0.75rem', border: b.alerta ? '2px solid #ef4444' : `1px solid ${border}` }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                          <span style={{ fontWeight: 'bold', color: text }}>{b.categoria}</span>
+                          <span style={{ fontSize: '0.875rem', color: b.alerta ? '#ef4444' : textSec }}>{b.porcentaje.toFixed(0)}%</span>
+                        </div>
+                        <div style={{ width: '100%', height: '8px', backgroundColor: border, borderRadius: '4px', overflow: 'hidden', marginBottom: '0.5rem' }}>
+                          <div style={{ width: `${b.porcentaje}%`, height: '100%', backgroundColor: b.alerta ? '#ef4444' : b.color, transition: 'width 0.3s' }}></div>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.875rem', color: textSec }}>
+                          <span>Gastado: ${b.gastado.toLocaleString()}</span>
+                          <span>Presupuesto: ${b.presupuesto.toLocaleString()}</span>
+                        </div>
+                        {b.alerta && <div style={{ marginTop: '0.5rem', padding: '0.5rem', backgroundColor: '#fef2f2', color: '#ef4444', borderRadius: '0.25rem', fontSize: '0.75rem', fontWeight: '600' }}>⚠️ Alerta: Has superado el 80% del presupuesto</div>}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p style={{ textAlign: 'center', color: textSec, paddingTop: '2rem' }}>No hay presupuestos configurados para este mes</p>
+                )}
+              </div>
             </div>
 
+            {/* NUEVA SECCIÓN: Metas y Sueños */}
             <div style={{ backgroundColor: card, border: `1px solid ${border}`, padding: '1.5rem', borderRadius: '1rem' }}>
-              <h2 style={{ color: text, margin: '0 0 1.5rem 0' }}>Estado de Presupuestos</h2>
-              {budgetStatus.length > 0 ? (
-                <div style={{ display: 'grid', gap: '1rem' }}>
-                  {budgetStatus.map(b => (
-                    <div key={b.categoria} style={{ padding: '1.5rem', backgroundColor: darkMode ? '#2a2a2a' : '#f9f9f9', borderRadius: '0.75rem', border: b.alerta ? '2px solid #ef4444' : `1px solid ${border}` }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                        <span style={{ fontWeight: 'bold', color: text }}>{b.categoria}</span>
-                        <span style={{ fontSize: '0.875rem', color: b.alerta ? '#ef4444' : textSec }}>{b.porcentaje.toFixed(0)}%</span>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                <h2 style={{ color: text, margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <Target size={20} /> Metas y Sueños
+                </h2>
+                <button 
+                  onClick={() => setShowAddGoal(!showAddGoal)} 
+                  style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: '0.5rem', 
+                    padding: '0.75rem 1rem', 
+                    backgroundColor: '#8b5cf6', 
+                    color: 'white', 
+                    border: 'none', 
+                    borderRadius: '0.5rem', 
+                    cursor: 'pointer', 
+                    fontWeight: '600' 
+                  }}
+                >
+                  <Plus size={18} /> Nueva Meta
+                </button>
+              </div>
+
+              {showAddGoal && (
+                <div style={{ 
+                  backgroundColor: darkMode ? '#2a2a2a' : '#f9f9f9', 
+                  border: `1px solid ${border}`, 
+                  padding: '1.5rem', 
+                  borderRadius: '0.75rem', 
+                  marginBottom: '1.5rem' 
+                }}>
+                  <h3 style={{ color: text, margin: '0 0 1rem 0' }}>Agregar Nueva Meta</h3>
+                  <input 
+                    type="text" 
+                    placeholder="Nombre de la meta (ej: Viaje a la playa)" 
+                    value={goalForm.name} 
+                    onChange={(e) => setGoalForm({ ...goalForm, name: e.target.value })} 
+                    style={{ 
+                      width: '100%', 
+                      padding: '0.75rem', 
+                      border: `1px solid ${border}`, 
+                      borderRadius: '0.5rem', 
+                      backgroundColor: input, 
+                      color: text, 
+                      marginBottom: '1rem', 
+                      boxSizing: 'border-box' 
+                    }} 
+                  />
+                  <select 
+                    value={goalForm.category} 
+                    onChange={(e) => setGoalForm({ ...goalForm, category: e.target.value })} 
+                    style={{ 
+                      width: '100%', 
+                      padding: '0.75rem', 
+                      border: `1px solid ${border}`, 
+                      borderRadius: '0.5rem', 
+                      backgroundColor: input, 
+                      color: text, 
+                      marginBottom: '1rem', 
+                      boxSizing: 'border-box' 
+                    }}
+                  >
+                    <option value="viaje">✈️ Viaje</option>
+                    <option value="casa">🏠 Casa</option>
+                    <option value="auto">🚗 Auto</option>
+                    <option value="educacion">🎓 Educación</option>
+                    <option value="salud">⚕️ Salud</option>
+                    <option value="tecnologia">💻 Tecnología</option>
+                    <option value="otros">🎯 Otros</option>
+                  </select>
+                  <input 
+                    type="number" 
+                    placeholder="Monto objetivo" 
+                    value={goalForm.targetAmount} 
+                    onChange={(e) => setGoalForm({ ...goalForm, targetAmount: e.target.value })} 
+                    style={{ 
+                      width: '100%', 
+                      padding: '0.75rem', 
+                      border: `1px solid ${border}`, 
+                      borderRadius: '0.5rem', 
+                      backgroundColor: input, 
+                      color: text, 
+                      marginBottom: '1rem', 
+                      boxSizing: 'border-box' 
+                    }} 
+                  />
+                  <input 
+                    type="number" 
+                    placeholder="Ahorro actual (opcional)" 
+                    value={goalForm.currentSaved} 
+                    onChange={(e) => setGoalForm({ ...goalForm, currentSaved: e.target.value })} 
+                    style={{ 
+                      width: '100%', 
+                      padding: '0.75rem', 
+                      border: `1px solid ${border}`, 
+                      borderRadius: '0.5rem', 
+                      backgroundColor: input, 
+                      color: text, 
+                      marginBottom: '1rem', 
+                      boxSizing: 'border-box' 
+                    }} 
+                  />
+                  <input 
+                    type="date" 
+                    placeholder="Fecha objetivo (opcional)" 
+                    value={goalForm.targetDate} 
+                    onChange={(e) => setGoalForm({ ...goalForm, targetDate: e.target.value })} 
+                    style={{ 
+                      width: '100%', 
+                      padding: '0.75rem', 
+                      border: `1px solid ${border}`, 
+                      borderRadius: '0.5rem', 
+                      backgroundColor: input, 
+                      color: text, 
+                      marginBottom: '1rem', 
+                      boxSizing: 'border-box' 
+                    }} 
+                  />
+                  <div style={{ display: 'flex', gap: '1rem' }}>
+                    <button 
+                      onClick={addGoal} 
+                      style={{ 
+                        flex: 1, 
+                        padding: '0.75rem', 
+                        backgroundColor: '#8b5cf6', 
+                        color: 'white', 
+                        border: 'none', 
+                        borderRadius: '0.5rem', 
+                        fontWeight: '600', 
+                        cursor: 'pointer' 
+                      }}
+                    >
+                      Guardar Meta
+                    </button>
+                    <button 
+                      onClick={() => setShowAddGoal(false)} 
+                      style={{ 
+                        flex: 1, 
+                        padding: '0.75rem', 
+                        backgroundColor: '#6b7280', 
+                        color: 'white', 
+                        border: 'none', 
+                        borderRadius: '0.5rem', 
+                        fontWeight: '600', 
+                        cursor: 'pointer' 
+                      }}
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Información de ahorro mensual */}
+              <div style={{ 
+                backgroundColor: darkMode ? '#2a2a2a' : '#f9f9f9', 
+                border: `1px solid ${border}`, 
+                padding: '1rem', 
+                borderRadius: '0.5rem', 
+                marginBottom: '1.5rem',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center'
+              }}>
+                <div>
+                  <div style={{ fontSize: '0.875rem', color: textSec }}>Ahorro mensual disponible</div>
+                  <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: monthlySavings >= 0 ? '#10b981' : '#ef4444' }}>
+                    ${monthlySavings.toLocaleString()}
+                  </div>
+                </div>
+                <div style={{ fontSize: '0.875rem', color: textSec, textAlign: 'right' }}>
+                  <div>Total en metas activas:</div>
+                  <div style={{ fontWeight: 'bold', color: text }}>
+                    ${Object.values(goals).reduce((sum, goal) => sum + (parseFloat(goal.target_amount) || 0), 0).toLocaleString()}
+                  </div>
+                </div>
+              </div>
+
+              {/* Lista de Metas */}
+              {Object.values(goals).length > 0 ? (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))', gap: '1rem' }}>
+                  {Object.values(goals).map(goal => {
+                    const progress = getGoalProgress(goal);
+                    const monthsToGoal = progress.remaining > 0 && monthlySavings > 0 
+                      ? Math.ceil(progress.remaining / monthlySavings)
+                      : 0;
+                    
+                    return (
+                      <div key={goal.id} style={{ 
+                        padding: '1.5rem', 
+                        backgroundColor: darkMode ? '#2a2a2a' : '#f9f9f9', 
+                        borderRadius: '0.75rem', 
+                        border: `2px solid ${border}`,
+                        position: 'relative'
+                      }}>
+                        <button 
+                          onClick={() => deleteGoal(goal.id)} 
+                          style={{ 
+                            position: 'absolute', 
+                            top: '0.75rem', 
+                            right: '0.75rem', 
+                            background: 'none', 
+                            border: 'none', 
+                            color: '#ef4444', 
+                            cursor: 'pointer' 
+                          }}
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                        
+                        <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>{getGoalIcon(goal.category)}</div>
+                        <h3 style={{ color: text, margin: '0 0 0.5rem 0' }}>{goal.name}</h3>
+                        
+                        <div style={{ width: '100%', height: '12px', backgroundColor: border, borderRadius: '6px', overflow: 'hidden', marginBottom: '0.5rem' }}>
+                          <div style={{ 
+                            width: `${progress.percentage}%`, 
+                            height: '100%', 
+                            backgroundColor: progress.percentage >= 100 ? '#10b981' : '#8b5cf6',
+                            transition: 'width 0.3s' 
+                          }}></div>
+                        </div>
+                        
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.875rem', color: textSec, marginBottom: '0.5rem' }}>
+                          <span>${progress.saved.toLocaleString()}</span>
+                          <span>${progress.target.toLocaleString()}</span>
+                        </div>
+                        
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                          <span style={{ fontWeight: 'bold', color: progress.percentage >= 100 ? '#10b981' : text }}>
+                            {progress.percentage.toFixed(0)}% completado
+                          </span>
+                          <span style={{ fontSize: '0.875rem', color: textSec }}>
+                            ${progress.remaining.toLocaleString()} restantes
+                          </span>
+                        </div>
+
+                        {monthlySavings > 0 && progress.remaining > 0 && (
+                          <div style={{ 
+                            padding: '0.5rem', 
+                            backgroundColor: darkMode ? '#1a1a1a' : '#f0f0f0', 
+                            borderRadius: '0.25rem', 
+                            fontSize: '0.75rem', 
+                            color: textSec,
+                            marginTop: '0.5rem'
+                          }}>
+                            📅 Con tu ahorro mensual, lograrás esta meta en aproximadamente <strong>{monthsToGoal} meses</strong>
+                          </div>
+                        )}
+
+                        {progress.percentage >= 100 && (
+                          <div style={{ 
+                            position: 'absolute', 
+                            top: '0.75rem', 
+                            left: '0.75rem', 
+                            background: '#10b981', 
+                            color: 'white', 
+                            padding: '0.25rem 0.5rem', 
+                            borderRadius: '0.25rem', 
+                            fontSize: '0.75rem', 
+                            fontWeight: '600' 
+                          }}>
+                            ¡Meta Alcanzada! 🎉
+                          </div>
+                        )}
                       </div>
-                      <div style={{ width: '100%', height: '8px', backgroundColor: border, borderRadius: '4px', overflow: 'hidden', marginBottom: '0.5rem' }}>
-                        <div style={{ width: `${b.porcentaje}%`, height: '100%', backgroundColor: b.alerta ? '#ef4444' : b.color, transition: 'width 0.3s' }}></div>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.875rem', color: textSec }}>
-                        <span>Gastado: ${b.gastado.toLocaleString()}</span>
-                        <span>Presupuesto: ${b.presupuesto.toLocaleString()}</span>
-                      </div>
-                      {b.alerta && <div style={{ marginTop: '0.5rem', padding: '0.5rem', backgroundColor: '#fef2f2', color: '#ef4444', borderRadius: '0.25rem', fontSize: '0.75rem', fontWeight: '600' }}>⚠️ Alerta: Has superado el 80% del presupuesto</div>}
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               ) : (
-                <p style={{ textAlign: 'center', color: textSec, paddingTop: '2rem' }}>No hay presupuestos configurados para este mes</p>
+                <div style={{ textAlign: 'center', padding: '3rem', color: textSec }}>
+                  <Target size={48} style={{ margin: '0 auto 1rem', opacity: 0.5 }} />
+                  <h3 style={{ color: textSec, margin: '0 0 0.5rem 0' }}>No hay metas configuradas</h3>
+                  <p style={{ margin: 0 }}>Crea tu primera meta para empezar a planificar tus sueños</p>
+                </div>
               )}
             </div>
           </div>
@@ -1146,7 +1624,6 @@ export default function FamControl() {
                 <option value="Cumpleaños">Cumpleaños</option>
               </select>
               <input type="text" placeholder="Título" value={eventForm.titulo} onChange={(e) => setEventForm({ ...eventForm, titulo: e.target.value })} style={{ width: '100%', padding: '0.75rem', border: `1px solid ${border}`, borderRadius: '0.5rem', backgroundColor: input, color: text, marginBottom: '1rem', boxSizing: 'border-box' }} />
-              {/* CORREGIDO: usar fecha_inicio */}
               <input type="date" value={eventForm.fecha_inicio} onChange={(e) => setEventForm({ ...eventForm, fecha_inicio: e.target.value })} style={{ width: '100%', padding: '0.75rem', border: `1px solid ${border}`, borderRadius: '0.5rem', backgroundColor: input, color: text, marginBottom: '1rem', boxSizing: 'border-box' }} />
               <input type="text" placeholder="Ubicación" value={eventForm.ubicacion} onChange={(e) => setEventForm({ ...eventForm, ubicacion: e.target.value })} style={{ width: '100%', padding: '0.75rem', border: `1px solid ${border}`, borderRadius: '0.5rem', backgroundColor: input, color: text, marginBottom: '1rem', boxSizing: 'border-box' }} />
               <button onClick={addEvent} style={{ width: '100%', padding: '0.75rem', backgroundColor: '#7c3aed', color: 'white', border: 'none', borderRadius: '0.5rem', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
@@ -1162,7 +1639,6 @@ export default function FamControl() {
                     <div>
                       <h3 style={{ color: text, margin: '0 0 0.5rem 0' }}>{e.titulo}</h3>
                       <p style={{ color: textSec, margin: '0.25rem 0', fontSize: '0.875rem' }}>{e.categoria}</p>
-                      {/* CORREGIDO: mostrar fecha_inicio */}
                       <p style={{ color: textSec, margin: '0.5rem 0 0 0', fontSize: '0.875rem' }}>📅 {e.fecha_inicio}</p>
                       {e.ubicacion && <p style={{ color: textSec, margin: '0.25rem 0', fontSize: '0.875rem' }}>📍 {e.ubicacion}</p>}
                     </div>
