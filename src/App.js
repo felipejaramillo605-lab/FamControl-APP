@@ -49,10 +49,11 @@ export default function FamControl() {
   const [filterPeriod, setFilterPeriod] = useState('mes');
   const [filterCategory, setFilterCategory] = useState('todas');
 
+  // CORREGIDO: usar fecha_inicio en lugar de fechaInicio
   const [eventForm, setEventForm] = useState({
     categoria: 'Cita',
     titulo: '',
-    fechaInicio: new Date().toISOString().split('T')[0],
+    fecha_inicio: new Date().toISOString().split('T')[0],
     ubicacion: ''
   });
   const [editingEventId, setEditingEventId] = useState(null);
@@ -80,6 +81,25 @@ export default function FamControl() {
   });
   const [showAddAccount, setShowAddAccount] = useState(false);
 
+  // Función para diagnóstico de sincronización
+  const debugSync = async (userId) => {
+    console.log('🔍 DEBUG Sincronización');
+    
+    const { data: remoteTx, error } = await supabase
+      .from('transactions')
+      .select('*')
+      .eq('user_id', userId);
+    
+    console.log('Transacciones en Supabase:', remoteTx?.length || 0);
+    console.log('Transacciones locales:', Object.values(transactions).length);
+    
+    if (error) {
+      console.error('Error en sync:', error);
+    }
+    
+    return remoteTx;
+  };
+
   useEffect(() => {
     const checkSession = async () => {
       try {
@@ -98,6 +118,8 @@ export default function FamControl() {
         
           // Cargar datos desde Supabase
           await loadUserData(userId);
+          // Llamar a debugSync para verificar sincronización
+          await debugSync(userId);
         }
       } catch (error) {
         console.error('Error crítico:', error);
@@ -172,131 +194,198 @@ export default function FamControl() {
   // Cargar datos del usuario desde Supabase
   const loadUserData = async (userId) => {
     try {
+      console.log('🔄 Cargando datos para usuario:', userId);
+      
       // Cargar cuentas
-      const { data: accountsData } = await supabase
+      const { data: accountsData, error: accountsError } = await supabase
         .from('accounts')
         .select('*')
         .eq('user_id', userId);
+      
+      if (accountsError) {
+        console.error('Error cargando cuentas:', accountsError);
+        throw accountsError;
+      }
     
       if (accountsData && accountsData.length > 0) {
+        console.log('✅ Cuentas cargadas:', accountsData.length);
         setAccounts(accountsData);
       } else {
-        // Si no hay cuentas, crear las predeterminadas
+        console.log('🆕 Creando cuentas predeterminadas');
         const defaultAccs = DEFAULT_ACCOUNTS.map(acc => ({
           ...acc,
           user_id: userId
         }));
-        await supabase.from('accounts').insert(defaultAccs);
+        const { error: insertError } = await supabase.from('accounts').insert(defaultAccs);
+        if (insertError) {
+          console.error('Error creando cuentas predeterminadas:', insertError);
+          throw insertError;
+        }
         setAccounts(DEFAULT_ACCOUNTS);
       }
 
       // Cargar transacciones
-      const { data: transData } = await supabase
+      const { data: transData, error: transError } = await supabase
         .from('transactions')
         .select('*')
         .eq('user_id', userId);
+      
+      if (transError) {
+        console.error('Error cargando transacciones:', transError);
+        throw transError;
+      }
     
       const transObj = {};
       transData?.forEach(t => { transObj[t.id] = t; });
+      console.log('✅ Transacciones cargadas:', Object.keys(transObj).length);
       setTransactions(transObj);
 
       // Cargar presupuestos
-      const { data: budgetData } = await supabase
+      const { data: budgetData, error: budgetError } = await supabase
         .from('budgets')
         .select('*')
         .eq('user_id', userId);
+      
+      if (budgetError) {
+        console.error('Error cargando presupuestos:', budgetError);
+        throw budgetError;
+      }
     
       const budgetObj = {};
       budgetData?.forEach(b => { 
         const key = `${b.categoria}-${b.mes}`;
         budgetObj[key] = b; 
       });
+      console.log('✅ Presupuestos cargados:', Object.keys(budgetObj).length);
       setBudgets(budgetObj);
 
-      // Cargar eventos
-      const { data: eventData } = await supabase
+      // Cargar eventos - CORREGIDO: usar fecha_inicio directamente
+      const { data: eventData, error: eventError } = await supabase
         .from('events')
         .select('*')
         .eq('user_id', userId);
+      
+      if (eventError) {
+        console.error('Error cargando eventos:', eventError);
+        throw eventError;
+      }
     
       const eventObj = {};
-      eventData?.forEach(e => { eventObj[e.id] = e; });
+      eventData?.forEach(e => { 
+        eventObj[e.id] = {
+          ...e,
+          // Mapear fecha_inicio de la base de datos al estado local
+          fecha_inicio: e.fecha_inicio
+        }; 
+      });
+      console.log('✅ Eventos cargados:', Object.keys(eventObj).length);
       setEvents(eventObj);
 
       // Cargar lista de compras
-      const { data: shoppingData } = await supabase
+      const { data: shoppingData, error: shoppingError } = await supabase
         .from('shopping_list')
         .select('*')
         .eq('user_id', userId);
+      
+      if (shoppingError) {
+        console.error('Error cargando lista de compras:', shoppingError);
+        throw shoppingError;
+      }
     
       const shoppingObj = {};
       shoppingData?.forEach(s => { shoppingObj[s.id] = s; });
+      console.log('✅ Items de compra cargados:', Object.keys(shoppingObj).length);
       setShoppingList(shoppingObj);
 
+      console.log('🎉 Todos los datos cargados exitosamente');
+
     } catch (error) {
-      console.error('Error cargando datos:', error);
+      console.error('❌ Error cargando datos:', error);
+      alert('Error cargando datos: ' + error.message);
     }
   };
 
   const addTransaction = async () => {
-    if (!transactionForm.valor || !transactionForm.descripcion) return;
+    if (!transactionForm.valor || !transactionForm.descripcion) {
+      alert('Por favor completa descripción y valor');
+      return;
+    }
     
     try {
       const { data: { user: currentUser } } = await supabase.auth.getUser();
+      if (!currentUser) throw new Error('No hay usuario autenticado');
     
       const newId = editingId || `trans_${Date.now()}`;
       const newTransaction = { 
         id: newId, 
         ...transactionForm, 
         user_id: currentUser.id,
+        valor: parseFloat(transactionForm.valor),
         created_at: new Date().toISOString() 
       };
     
       // Guardar en Supabase
-      await supabase
+      const { error } = await supabase
         .from('transactions')
         .upsert(newTransaction);
+      
+      if (error) throw error;
     
       // Actualizar estado local
-      setTransactions({ ...transactions, [newId]: newTransaction });
+      setTransactions(prev => ({ ...prev, [newId]: newTransaction }));
       
       // Actualizar saldos de cuentas
       if (transactionForm.tipo === 'transferencia' && transactionForm.cuentaDestino) {
-        const updatedAccounts = accounts.map(acc => {
-          if (acc.id === transactionForm.cuenta) {
-            const newSaldo = (acc.saldo || 0) - parseFloat(transactionForm.valor);
-            supabase.from('accounts').update({ saldo: newSaldo }).eq('id', acc.id).eq('user_id', currentUser.id);
-            return { ...acc, saldo: newSaldo };
-          }
-          if (acc.id === transactionForm.cuentaDestino) {
-            const newSaldo = (acc.saldo || 0) + parseFloat(transactionForm.valor);
-            supabase.from('accounts').update({ saldo: newSaldo }).eq('id', acc.id).eq('user_id', currentUser.id);
-            return { ...acc, saldo: newSaldo };
-          }
-          return acc;
-        });
+        const updatedAccounts = await Promise.all(
+          accounts.map(async (acc) => {
+            if (acc.id === transactionForm.cuenta) {
+              const newSaldo = (acc.saldo || 0) - parseFloat(transactionForm.valor);
+              await supabase.from('accounts').update({ saldo: newSaldo }).eq('id', acc.id).eq('user_id', currentUser.id);
+              return { ...acc, saldo: newSaldo };
+            }
+            if (acc.id === transactionForm.cuentaDestino) {
+              const newSaldo = (acc.saldo || 0) + parseFloat(transactionForm.valor);
+              await supabase.from('accounts').update({ saldo: newSaldo }).eq('id', acc.id).eq('user_id', currentUser.id);
+              return { ...acc, saldo: newSaldo };
+            }
+            return acc;
+          })
+        );
         setAccounts(updatedAccounts);
       } else {
-        const updatedAccounts = accounts.map(acc => {
-          if (acc.id === transactionForm.cuenta) {
-            const change = transactionForm.tipo === 'ingreso' ? parseFloat(transactionForm.valor) : -parseFloat(transactionForm.valor);
-            const newSaldo = (acc.saldo || 0) + change;
-            supabase.from('accounts').update({ saldo: newSaldo }).eq('id', acc.id).eq('user_id', currentUser.id);
-            return { ...acc, saldo: newSaldo };
-          }
-          return acc;
-        });
+        const updatedAccounts = await Promise.all(
+          accounts.map(async (acc) => {
+            if (acc.id === transactionForm.cuenta) {
+              const change = transactionForm.tipo === 'ingreso' ? parseFloat(transactionForm.valor) : -parseFloat(transactionForm.valor);
+              const newSaldo = (acc.saldo || 0) + change;
+              await supabase.from('accounts').update({ saldo: newSaldo }).eq('id', acc.id).eq('user_id', currentUser.id);
+              return { ...acc, saldo: newSaldo };
+            }
+            return acc;
+          })
+        );
         setAccounts(updatedAccounts);
       }
       
-      setTransactionForm({ fecha: new Date().toISOString().split('T')[0], descripcion: '', categoria: 'alimentacion', cuenta: 'efectivo', valor: '', tipo: 'gasto', cuentaDestino: '' });
+      setTransactionForm({ 
+        fecha: new Date().toISOString().split('T')[0], 
+        descripcion: '', 
+        categoria: 'alimentacion', 
+        cuenta: 'efectivo', 
+        valor: '', 
+        tipo: 'gasto', 
+        cuentaDestino: '' 
+      });
       setEditingId(null);
+      
+      console.log('✅ Transacción guardada exitosamente');
     } catch (error) {
-      console.error('Error guardando transacción:', error);
-      alert('Error al guardar la transacción');
+      console.error('❌ Error guardando transacción:', error);
+      alert('Error al guardar la transacción: ' + error.message);
     }
   };
 
+  // CORREGIDO: usar fecha_inicio
   const addEvent = async () => {
     if (!eventForm.titulo) {
       alert('Por favor ingresa un título para el evento');
@@ -310,10 +399,15 @@ export default function FamControl() {
       const newId = editingEventId || `event_${Date.now()}`;
       const newEvent = { 
         id: newId, 
-        ...eventForm, 
+        titulo: eventForm.titulo,
+        categoria: eventForm.categoria,
+        fecha_inicio: eventForm.fecha_inicio, // CORREGIDO
+        ubicacion: eventForm.ubicacion,
         user_id: currentUser.id,
         created_at: new Date().toISOString() 
       };
+      
+      console.log('🔄 Guardando evento:', newEvent);
       
       // Guardar en Supabase
       const { error } = await supabase
@@ -323,11 +417,18 @@ export default function FamControl() {
       if (error) throw error;
       
       // Actualizar estado local
-      setEvents({ ...events, [newId]: newEvent });
-      setEventForm({ categoria: 'Cita', titulo: '', fechaInicio: new Date().toISOString().split('T')[0], ubicacion: '' });
+      setEvents(prev => ({ ...prev, [newId]: newEvent }));
+      setEventForm({ 
+        categoria: 'Cita', 
+        titulo: '', 
+        fecha_inicio: new Date().toISOString().split('T')[0], // CORREGIDO
+        ubicacion: '' 
+      });
       setEditingEventId(null);
+      
+      console.log('✅ Evento guardado exitosamente');
     } catch (error) {
-      console.error('Error guardando evento:', error);
+      console.error('❌ Error guardando evento:', error);
       alert('Error al guardar el evento: ' + error.message);
     }
   };
@@ -358,7 +459,7 @@ export default function FamControl() {
       if (error) throw error;
       
       // Actualizar estado local
-      setShoppingList({ ...shoppingList, [newId]: newItem });
+      setShoppingList(prev => ({ ...prev, [newId]: newItem }));
       setShoppingForm({ item: '', cantidad: 1, categoria: 'alimentacion', precio: '', comprado: false });
     } catch (error) {
       console.error('Error guardando item de compra:', error);
@@ -379,7 +480,7 @@ export default function FamControl() {
       if (error) throw error;
       
       // Actualizar estado local
-      setShoppingList({ ...shoppingList, [id]: updatedItem });
+      setShoppingList(prev => ({ ...prev, [id]: updatedItem }));
     } catch (error) {
       console.error('Error actualizando item:', error);
       alert('Error al actualizar el item: ' + error.message);
@@ -412,7 +513,7 @@ export default function FamControl() {
       if (error) throw error;
       
       // Actualizar estado local
-      setBudgets({ ...budgets, [key]: newBudget });
+      setBudgets(prev => ({ ...prev, [key]: newBudget }));
       setBudgetForm({ categoria: 'alimentacion', monto: '', mes: new Date().toISOString().slice(0, 7) });
     } catch (error) {
       console.error('Error guardando presupuesto:', error);
@@ -450,7 +551,7 @@ export default function FamControl() {
       if (error) throw error;
       
       // Actualizar estado local
-      setAccounts([...accounts, newAccount]);
+      setAccounts(prev => [...prev, newAccount]);
       setAccountForm({ name: '', type: 'banco', icon: '🏦', saldo: 0 });
       setShowAddAccount(false);
     } catch (error) {
@@ -480,7 +581,7 @@ export default function FamControl() {
         .eq('id', accountId);
       
       // Actualizar estado local
-      setAccounts(accounts.filter(acc => acc.id !== accountId));
+      setAccounts(prev => prev.filter(acc => acc.id !== accountId));
     } catch (error) {
       console.error('Error eliminando cuenta:', error);
       alert('Error al eliminar la cuenta: ' + error.message);
@@ -1045,7 +1146,8 @@ export default function FamControl() {
                 <option value="Cumpleaños">Cumpleaños</option>
               </select>
               <input type="text" placeholder="Título" value={eventForm.titulo} onChange={(e) => setEventForm({ ...eventForm, titulo: e.target.value })} style={{ width: '100%', padding: '0.75rem', border: `1px solid ${border}`, borderRadius: '0.5rem', backgroundColor: input, color: text, marginBottom: '1rem', boxSizing: 'border-box' }} />
-              <input type="date" value={eventForm.fechaInicio} onChange={(e) => setEventForm({ ...eventForm, fechaInicio: e.target.value })} style={{ width: '100%', padding: '0.75rem', border: `1px solid ${border}`, borderRadius: '0.5rem', backgroundColor: input, color: text, marginBottom: '1rem', boxSizing: 'border-box' }} />
+              {/* CORREGIDO: usar fecha_inicio */}
+              <input type="date" value={eventForm.fecha_inicio} onChange={(e) => setEventForm({ ...eventForm, fecha_inicio: e.target.value })} style={{ width: '100%', padding: '0.75rem', border: `1px solid ${border}`, borderRadius: '0.5rem', backgroundColor: input, color: text, marginBottom: '1rem', boxSizing: 'border-box' }} />
               <input type="text" placeholder="Ubicación" value={eventForm.ubicacion} onChange={(e) => setEventForm({ ...eventForm, ubicacion: e.target.value })} style={{ width: '100%', padding: '0.75rem', border: `1px solid ${border}`, borderRadius: '0.5rem', backgroundColor: input, color: text, marginBottom: '1rem', boxSizing: 'border-box' }} />
               <button onClick={addEvent} style={{ width: '100%', padding: '0.75rem', backgroundColor: '#7c3aed', color: 'white', border: 'none', borderRadius: '0.5rem', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
                 <Plus size={18} />Agregar Evento
@@ -1060,7 +1162,8 @@ export default function FamControl() {
                     <div>
                       <h3 style={{ color: text, margin: '0 0 0.5rem 0' }}>{e.titulo}</h3>
                       <p style={{ color: textSec, margin: '0.25rem 0', fontSize: '0.875rem' }}>{e.categoria}</p>
-                      <p style={{ color: textSec, margin: '0.5rem 0 0 0', fontSize: '0.875rem' }}>📅 {e.fechaInicio}</p>
+                      {/* CORREGIDO: mostrar fecha_inicio */}
+                      <p style={{ color: textSec, margin: '0.5rem 0 0 0', fontSize: '0.875rem' }}>📅 {e.fecha_inicio}</p>
                       {e.ubicacion && <p style={{ color: textSec, margin: '0.25rem 0', fontSize: '0.875rem' }}>📍 {e.ubicacion}</p>}
                     </div>
                     <div style={{ display: 'flex', gap: '0.5rem' }}>
