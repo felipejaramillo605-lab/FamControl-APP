@@ -72,37 +72,33 @@ export default function FamControl() {
   });
 
   useEffect(() => {
-    // Verificar sesión activa en Supabase
     const checkSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession();
       
-      if (session?.user) {
-        const userEmail = session.user.email;
-        setUser(userEmail);
-        localStorage.setItem('famcontrol_current_user', userEmail);
+        if (error) {
+          console.error('Error de Supabase:', error);
+          return;
+        }
+      
+        if (session?.user) {
+          const userEmail = session.user.email;
+          const userId = session.user.id;
+          setUser(userEmail);
+          localStorage.setItem('famcontrol_current_user', userEmail);
         
-        // Cargar datos del usuario
-        setTransactions(JSON.parse(localStorage.getItem(`transactions_${userEmail}`) || '{}'));
-        setEvents(JSON.parse(localStorage.getItem(`events_${userEmail}`) || '{}'));
-        setAccounts(JSON.parse(localStorage.getItem(`accounts_${userEmail}`)) || DEFAULT_ACCOUNTS);
-        setBudgets(JSON.parse(localStorage.getItem(`budgets_${userEmail}`) || '{}'));
-        setShoppingList(JSON.parse(localStorage.getItem(`shopping_${userEmail}`) || '{}'));
+          // Cargar datos desde Supabase
+          await loadUserData(userId);
+        }
+      } catch (error) {
+        console.error('Error crítico:', error);
       }
     };
-    
+  
     checkSession();
   }, []);
 
-  useEffect(() => {
-    if (user) {
-      localStorage.setItem(`transactions_${user}`, JSON.stringify(transactions));
-      localStorage.setItem(`events_${user}`, JSON.stringify(events));
-      localStorage.setItem(`accounts_${user}`, JSON.stringify(accounts));
-      localStorage.setItem(`budgets_${user}`, JSON.stringify(budgets));
-      localStorage.setItem(`shopping_${user}`, JSON.stringify(shoppingList));
-    }
-  }, [transactions, events, accounts, budgets, shoppingList, user]);
-
+  
   const handleLogin = async () => {
     if (!loginEmail || !loginPassword) {
       alert('Por favor completa todos los campos');
@@ -147,6 +143,75 @@ export default function FamControl() {
     } catch (error) {
       console.error('Error en autenticación:', error);
       alert('Error inesperado. Intenta de nuevo.');
+    }
+  };
+
+    // Cargar datos del usuario desde Supabase
+  const loadUserData = async (userId) => {
+    try {
+      // Cargar cuentas
+      const { data: accountsData } = await supabase
+        .from('accounts')
+        .select('*')
+        .eq('user_id', userId);
+    
+      if (accountsData && accountsData.length > 0) {
+        setAccounts(accountsData);
+      } else {
+        // Si no hay cuentas, crear las predeterminadas
+        const defaultAccs = DEFAULT_ACCOUNTS.map(acc => ({
+          ...acc,
+          user_id: userId
+        }));
+        await supabase.from('accounts').insert(defaultAccs);
+        setAccounts(DEFAULT_ACCOUNTS);
+      }
+
+      // Cargar transacciones
+      const { data: transData } = await supabase
+        .from('transactions')
+        .select('*')
+        .eq('user_id', userId);
+    
+      const transObj = {};
+      transData?.forEach(t => { transObj[t.id] = t; });
+      setTransactions(transObj);
+
+      // Cargar presupuestos
+      const { data: budgetData } = await supabase
+        .from('budgets')
+        .select('*')
+        .eq('user_id', userId);
+    
+      const budgetObj = {};
+      budgetData?.forEach(b => { 
+        const key = `${b.categoria}-${b.mes}`;
+        budgetObj[key] = b; 
+      });
+      setBudgets(budgetObj);
+
+      // Cargar eventos
+      const { data: eventData } = await supabase
+        .from('events')
+        .select('*')
+        .eq('user_id', userId);
+    
+      const eventObj = {};
+      eventData?.forEach(e => { eventObj[e.id] = e; });
+      setEvents(eventObj);
+
+      // Cargar lista de compras
+      const { data: shoppingData } = await supabase
+        .from('shopping_list')
+        .select('*')
+        .eq('user_id', userId);
+    
+      const shoppingObj = {};
+      shoppingData?.forEach(s => { shoppingObj[s.id] = s; });
+      setShoppingList(shoppingObj);
+
+    } catch (error) {
+      console.error('Error cargando datos:', error);
     }
   };
 
