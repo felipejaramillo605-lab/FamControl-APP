@@ -127,6 +127,7 @@ export default function FamControl() {
     checkSession();
   }, []);
 
+  // NUEVO: Cargar configuraciones al iniciar
   useEffect(() => {
     if (typeof window === 'undefined') return;
     
@@ -527,7 +528,7 @@ export default function FamControl() {
       
       if (error) throw error;
       
-      setShoppingList(prev => ({ ...prev, [id]: updatedItem });
+      setShoppingList(prev => ({ ...prev, [id]: updatedItem }));
     } catch (error) {
       console.error('Error actualizando item:', error);
       alert('Error al actualizar el item: ' + error.message);
@@ -1018,7 +1019,7 @@ export default function FamControl() {
             )}
 
             {/* NUEVO: Frase del Día */}
-            <DailyQuote darkMode={darkMode} />
+            <DailyQuote />
           </div>
         )}
 
@@ -1241,48 +1242,85 @@ export default function FamControl() {
                         </span>
                         <button onClick={async () => { 
   try {
-    // 1. Eliminar de Supabase
-    const { error } = await supabase
+    const { data: { user: currentUser } } = await supabase.auth.getUser();
+    if (!currentUser) throw new Error('No hay usuario autenticado');
+    
+    // 1. REVERTIR EL SALDO DE LA CUENTA
+    const account = accounts.find(a => a.id === t.cuenta);
+    if (account) {
+      // Calcular el cambio a revertir
+      let revertChange = 0;
+      
+      if (t.tipo === 'ingreso') {
+        revertChange = -parseFloat(t.valor); // Revertir ingreso
+      } else if (t.tipo === 'gasto') {
+        revertChange = parseFloat(t.valor); // Revertir gasto
+      } else if (t.tipo === 'transferencia' && t.cuentaDestino) {
+        // Para transferencias, revertir en ambas cuentas
+        revertChange = parseFloat(t.valor); // Volver a la cuenta origen
+        
+        const destinationAccount = accounts.find(a => a.id === t.cuentaDestino);
+        if (destinationAccount) {
+          const destinationRevert = -parseFloat(t.valor); // Quitar de la cuenta destino
+          const newDestinationSaldo = (destinationAccount.saldo || 0) + destinationRevert;
+          
+          // Actualizar cuenta destino en Supabase
+          const { error: updateDestError } = await supabase
+            .from('accounts')
+            .update({ saldo: newDestinationSaldo })
+            .eq('id', destinationAccount.id)
+            .eq('user_id', currentUser.id);
+          
+          if (updateDestError) throw updateDestError;
+          
+          // Actualizar cuenta destino en estado local
+          const updatedAccountsDest = accounts.map(acc => 
+            acc.id === t.cuentaDestino ? { ...acc, saldo: newDestinationSaldo } : acc
+          );
+          setAccounts(updatedAccountsDest);
+        }
+      }
+      
+      const newSaldo = (account.saldo || 0) + revertChange;
+      
+      // Actualizar saldo en Supabase
+      const { error: updateError } = await supabase
+        .from('accounts')
+        .update({ saldo: newSaldo })
+        .eq('id', account.id)
+        .eq('user_id', currentUser.id);
+      
+      if (updateError) throw updateError;
+      
+      // Actualizar en estado local
+      const updatedAccounts = accounts.map(acc => 
+        acc.id === t.cuenta ? { ...acc, saldo: newSaldo } : acc
+      );
+      setAccounts(updatedAccounts);
+    }
+    
+    // 2. ELIMINAR LA TRANSACCIÓN DE SUPABASE
+    const { error: deleteError } = await supabase
       .from('transactions')
       .delete()
-      .eq('id', t.id);
+      .eq('id', t.id)
+      .eq('user_id', currentUser.id);
     
-    if (error) throw error;
+    if (deleteError) throw deleteError;
     
-    // 2. Actualizar estado
+    // 3. ACTUALIZAR ESTADO LOCAL
     const newTx = {...transactions}; 
     delete newTx[t.id]; 
     setTransactions(newTx);
     
-    // 3. Actualizar saldo de la cuenta
-    const { data: { user: currentUser } } = await supabase.auth.getUser();
-    if (currentUser) {
-      const account = accounts.find(a => a.id === t.cuenta);
-      if (account) {
-        // Revertir el cambio de saldo
-        const change = t.tipo === 'ingreso' ? parseFloat(t.valor) : -parseFloat(t.valor);
-        const newSaldo = (account.saldo || 0) - change;
-        
-        await supabase
-          .from('accounts')
-          .update({ saldo: newSaldo })
-          .eq('id', t.cuenta)
-          .eq('user_id', currentUser.id);
-        
-        // Actualizar cuentas en estado
-        const updatedAccounts = accounts.map(acc => 
-          acc.id === t.cuenta ? { ...acc, saldo: newSaldo } : acc
-        );
-        setAccounts(updatedAccounts);
-      }
-    }
+    console.log('✅ Transacción eliminada y saldo revertido correctamente');
   } catch (error) {
     console.error('Error eliminando transacción:', error);
-    alert('Error al eliminar la transacción');
+    alert('Error al eliminar la transacción: ' + error.message);
   }
 }} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer' }}>
-                          <Trash2 size={16} />
-                        </button>
+  <Trash2 size={16} />
+</button>
                       </div>
                     </div>
                   );
