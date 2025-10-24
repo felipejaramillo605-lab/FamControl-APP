@@ -1,3 +1,6 @@
+import { useSettingsStore } from './stores/settings';
+import SettingsModal from './components/SettingsModal';
+import DailyQuote from './components/DailyQuote';
 import { supabase } from './supabaseClient';
 import React, { useState, useEffect } from 'react';
 import { Plus, Trash2, Edit2, LogOut, BarChart3, Calendar, DollarSign, Home, Moon, Sun, ShoppingCart, Wallet, TrendingUp, ArrowRightLeft, Download, Upload, Target, Star } from 'lucide-react';
@@ -34,9 +37,9 @@ export default function FamControl() {
   const [shoppingList, setShoppingList] = useState({});
   const [transactions, setTransactions] = useState({});
   const [events, setEvents] = useState({});
-  
-  // NUEVO: Estado para Metas y Sueños
   const [goals, setGoals] = useState({});
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const settingsStore = useSettingsStore();
   const [goalForm, setGoalForm] = useState({
     name: '',
     targetAmount: '',
@@ -90,25 +93,6 @@ export default function FamControl() {
   });
   const [showAddAccount, setShowAddAccount] = useState(false);
 
-  // Función para diagnóstico de sincronización
-  const debugSync = async (userId) => {
-    console.log('🔍 DEBUG Sincronización');
-    
-    const { data: remoteTx, error } = await supabase
-      .from('transactions')
-      .select('*')
-      .eq('user_id', userId);
-    
-    console.log('Transacciones en Supabase:', remoteTx?.length || 0);
-    console.log('Transacciones locales:', Object.values(transactions).length);
-    
-    if (error) {
-      console.error('Error en sync:', error);
-    }
-    
-    return remoteTx;
-  };
-
   useEffect(() => {
     const checkSession = async () => {
       try {
@@ -135,6 +119,29 @@ export default function FamControl() {
   
     checkSession();
   }, []);
+
+  // NUEVO: Cargar configuraciones al iniciar
+  useEffect(() => {
+    settingsStore.loadSettings();
+  }, [settingsStore]);
+
+  const debugSync = async (userId) => {
+    console.log('🔍 DEBUG Sincronización');
+    
+    const { data: remoteTx, error } = await supabase
+      .from('transactions')
+      .select('*')
+      .eq('user_id', userId);
+    
+    console.log('Transacciones en Supabase:', remoteTx?.length || 0);
+    console.log('Transacciones locales:', Object.values(transactions).length);
+    
+    if (error) {
+      console.error('Error en sync:', error);
+    }
+    
+    return remoteTx;
+  };
 
   const checkSupabaseConnection = async () => {
     try {
@@ -195,12 +202,10 @@ export default function FamControl() {
     }
   };
 
-  // Cargar datos del usuario desde Supabase
   const loadUserData = async (userId) => {
     try {
       console.log('🔄 Cargando datos para usuario:', userId);
       
-      // Cargar cuentas
       const { data: accountsData, error: accountsError } = await supabase
         .from('accounts')
         .select('*')
@@ -228,7 +233,6 @@ export default function FamControl() {
         setAccounts(DEFAULT_ACCOUNTS);
       }
 
-      // Cargar transacciones - CORREGIDO: mapear cuenta_destino
       const { data: transData, error: transError } = await supabase
         .from('transactions')
         .select('*')
@@ -243,13 +247,12 @@ export default function FamControl() {
       transData?.forEach(t => { 
         transObj[t.id] = {
           ...t,
-          cuentaDestino: t.cuenta_destino // Mapear desde la base de datos
+          cuentaDestino: t.cuenta_destino
         }; 
       });
       console.log('✅ Transacciones cargadas:', Object.keys(transObj).length);
       setTransactions(transObj);
 
-      // Cargar presupuestos
       const { data: budgetData, error: budgetError } = await supabase
         .from('budgets')
         .select('*')
@@ -268,7 +271,6 @@ export default function FamControl() {
       console.log('✅ Presupuestos cargados:', Object.keys(budgetObj).length);
       setBudgets(budgetObj);
 
-      // Cargar eventos
       const { data: eventData, error: eventError } = await supabase
         .from('events')
         .select('*')
@@ -289,7 +291,6 @@ export default function FamControl() {
       console.log('✅ Eventos cargados:', Object.keys(eventObj).length);
       setEvents(eventObj);
 
-      // Cargar lista de compras
       const { data: shoppingData, error: shoppingError } = await supabase
         .from('shopping_list')
         .select('*')
@@ -305,7 +306,6 @@ export default function FamControl() {
       console.log('✅ Items de compra cargados:', Object.keys(shoppingObj).length);
       setShoppingList(shoppingObj);
 
-      // NUEVO: Cargar metas
       const { data: goalsData, error: goalsError } = await supabase
         .from('goals')
         .select('*')
@@ -313,7 +313,6 @@ export default function FamControl() {
       
       if (goalsError) {
         console.error('Error cargando metas:', goalsError);
-        // Si la tabla no existe, no es error crítico
       } else {
         const goalsObj = {};
         goalsData?.forEach(g => { goalsObj[g.id] = g; });
@@ -329,7 +328,6 @@ export default function FamControl() {
     }
   };
 
-  // CORREGIDO: Función addTransaction con cuenta_destino
   const addTransaction = async () => {
     if (!transactionForm.valor || !transactionForm.descripcion) {
       alert('Por favor completa descripción y valor');
@@ -342,7 +340,6 @@ export default function FamControl() {
     
       const newId = editingId || `trans_${Date.now()}`;
       
-      // PREPARAR DATOS PARA SUPABASE - CORREGIDO
       const transactionData = {
         id: newId,
         fecha: transactionForm.fecha,
@@ -355,28 +352,24 @@ export default function FamControl() {
         created_at: new Date().toISOString()
       };
       
-      // Solo agregar cuenta_destino si es una transferencia
       if (transactionForm.tipo === 'transferencia' && transactionForm.cuentaDestino) {
         transactionData.cuenta_destino = transactionForm.cuentaDestino;
       }
     
-      // Guardar en Supabase
       const { error } = await supabase
         .from('transactions')
         .upsert(transactionData);
       
       if (error) throw error;
     
-      // Actualizar estado local (mantener cuentaDestino para el estado local)
       setTransactions(prev => ({ 
         ...prev, 
         [newId]: {
           ...transactionData,
-          cuentaDestino: transactionForm.cuentaDestino // Mantener para estado local
+          cuentaDestino: transactionForm.cuentaDestino
         }
       }));
       
-      // Actualizar saldos de cuentas
       if (transactionForm.tipo === 'transferencia' && transactionForm.cuentaDestino) {
         const updatedAccounts = await Promise.all(
           accounts.map(async (acc) => {
@@ -554,7 +547,6 @@ export default function FamControl() {
     }
   };
 
-  // NUEVO: Funciones para Metas y Sueños
   const addGoal = async () => {
     if (!goalForm.name || !goalForm.targetAmount) {
       alert('Por favor ingresa nombre y monto objetivo para la meta');
@@ -577,14 +569,12 @@ export default function FamControl() {
         created_at: new Date().toISOString()
       };
       
-      // Guardar en Supabase
       const { error } = await supabase
         .from('goals')
         .upsert(newGoal);
       
       if (error) throw error;
       
-      // Actualizar estado local
       setGoals(prev => ({ ...prev, [newId]: newGoal }));
       setGoalForm({ 
         name: '', 
@@ -620,7 +610,6 @@ export default function FamControl() {
     }
   };
 
-  // Calcular progreso de metas
   const getGoalProgress = (goal) => {
     const target = parseFloat(goal.target_amount) || 1;
     const saved = parseFloat(goal.current_saved) || 0;
@@ -633,7 +622,6 @@ export default function FamControl() {
     };
   };
 
-  // Calcular ahorro mensual disponible
   const getMonthlySavings = () => {
     const currentMonth = new Date().toISOString().slice(0, 7);
     const monthTx = Object.values(transactions).filter(t => t.fecha.startsWith(currentMonth));
@@ -837,8 +825,24 @@ export default function FamControl() {
   return (
     <div style={{ minHeight: '100vh', backgroundColor: bg }}>
       <div style={{ backgroundColor: card, borderBottom: `1px solid ${border}`, padding: '1rem 2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', color: text, margin: 0 }}>FamControl v2</h1>
+        <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', color: text, margin: 0 }}>
+          {settingsStore.settings.app_name}
+        </h1>
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <button
+            onClick={() => setShowSettingsModal(true)}
+            style={{
+              padding: '0.5rem',
+              borderRadius: '0.5rem',
+              border: 'none', 
+              backgroundColor: darkMode ? '#333' : '#f0f0f0',
+              cursor: 'pointer'
+            }}
+            title="Configuración"
+          >
+            ⚙️
+          </button>
+
           <button onClick={() => setDarkMode(!darkMode)} style={{ padding: '0.5rem', borderRadius: '0.5rem', border: 'none', backgroundColor: darkMode ? '#333' : '#f0f0f0', cursor: 'pointer' }}>
             {darkMode ? <Sun size={20} color="#fbbf24" /> : <Moon size={20} color="#666" />}
           </button>
@@ -934,7 +938,6 @@ export default function FamControl() {
               </div>
             </div>
 
-            {/* NUEVO: Metas Destacadas en Home */}
             {Object.values(goals).length > 0 && (
               <div style={{ marginTop: '1.5rem' }}>
                 <div style={{ backgroundColor: card, border: `1px solid ${border}`, padding: '1.5rem', borderRadius: '1rem' }}>
@@ -988,6 +991,9 @@ export default function FamControl() {
                 </div>
               </div>
             )}
+
+            {/* NUEVO: Frase del Día */}
+            <DailyQuote />
           </div>
         )}
 
@@ -1232,7 +1238,6 @@ export default function FamControl() {
 
         {currentTab === 'presupuestos' && (
           <div>
-            {/* Sección de Presupuestos Existente */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '1.5rem', marginBottom: '2rem' }}>
               <div style={{ backgroundColor: card, border: `1px solid ${border}`, padding: '1.5rem', borderRadius: '1rem', height: 'fit-content' }}>
                 <h2 style={{ color: text, margin: '0 0 1rem 0' }}>Nuevo Presupuesto</h2>
@@ -1273,7 +1278,6 @@ export default function FamControl() {
               </div>
             </div>
 
-            {/* NUEVA SECCIÓN: Metas y Sueños */}
             <div style={{ backgroundColor: card, border: `1px solid ${border}`, padding: '1.5rem', borderRadius: '1rem' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
                 <h2 style={{ color: text, margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -1428,7 +1432,6 @@ export default function FamControl() {
                 </div>
               )}
 
-              {/* Información de ahorro mensual */}
               <div style={{ 
                 backgroundColor: darkMode ? '#2a2a2a' : '#f9f9f9', 
                 border: `1px solid ${border}`, 
@@ -1453,7 +1456,6 @@ export default function FamControl() {
                 </div>
               </div>
 
-              {/* Lista de Metas */}
               {Object.values(goals).length > 0 ? (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))', gap: '1rem' }}>
                   {Object.values(goals).map(goal => {
@@ -1705,6 +1707,12 @@ export default function FamControl() {
           </div>
         )}
       </div>
+
+      {/* NUEVO: Modal de Configuración */}
+      <SettingsModal 
+        isOpen={showSettingsModal} 
+        onClose={() => setShowSettingsModal(false)} 
+      />
     </div>
   );
 }
