@@ -127,7 +127,6 @@ export default function FamControl() {
     checkSession();
   }, []);
 
-  // NUEVO: Cargar configuraciones al iniciar
   useEffect(() => {
     if (typeof window === 'undefined') return;
     
@@ -528,7 +527,7 @@ export default function FamControl() {
       
       if (error) throw error;
       
-      setShoppingList(prev => ({ ...prev, [id]: updatedItem }));
+      setShoppingList(prev => ({ ...prev, [id]: updatedItem });
     } catch (error) {
       console.error('Error actualizando item:', error);
       alert('Error al actualizar el item: ' + error.message);
@@ -1019,7 +1018,7 @@ export default function FamControl() {
             )}
 
             {/* NUEVO: Frase del Día */}
-            <DailyQuote />
+            <DailyQuote darkMode={darkMode} />
           </div>
         )}
 
@@ -1241,16 +1240,47 @@ export default function FamControl() {
                           {t.tipo === 'ingreso' ? '+' : '-'}${parseFloat(t.valor).toLocaleString()}
                         </span>
                         <button onClick={async () => { 
-                          try {
-                            await supabase.from('transactions').delete().eq('id', t.id);
-                            const newTx = {...transactions}; 
-                            delete newTx[t.id]; 
-                            setTransactions(newTx); 
-                          } catch (error) {
-                            console.error('Error eliminando transacción:', error);
-                            alert('Error al eliminar la transacción');
-                          }
-                        }} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer' }}>
+  try {
+    // 1. Eliminar de Supabase
+    const { error } = await supabase
+      .from('transactions')
+      .delete()
+      .eq('id', t.id);
+    
+    if (error) throw error;
+    
+    // 2. Actualizar estado
+    const newTx = {...transactions}; 
+    delete newTx[t.id]; 
+    setTransactions(newTx);
+    
+    // 3. Actualizar saldo de la cuenta
+    const { data: { user: currentUser } } = await supabase.auth.getUser();
+    if (currentUser) {
+      const account = accounts.find(a => a.id === t.cuenta);
+      if (account) {
+        // Revertir el cambio de saldo
+        const change = t.tipo === 'ingreso' ? parseFloat(t.valor) : -parseFloat(t.valor);
+        const newSaldo = (account.saldo || 0) - change;
+        
+        await supabase
+          .from('accounts')
+          .update({ saldo: newSaldo })
+          .eq('id', t.cuenta)
+          .eq('user_id', currentUser.id);
+        
+        // Actualizar cuentas en estado
+        const updatedAccounts = accounts.map(acc => 
+          acc.id === t.cuenta ? { ...acc, saldo: newSaldo } : acc
+        );
+        setAccounts(updatedAccounts);
+      }
+    }
+  } catch (error) {
+    console.error('Error eliminando transacción:', error);
+    alert('Error al eliminar la transacción');
+  }
+}} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer' }}>
                           <Trash2 size={16} />
                         </button>
                       </div>
