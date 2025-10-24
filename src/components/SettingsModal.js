@@ -3,58 +3,114 @@ import { useSettingsStore } from '../stores/settings';
 
 const SettingsModal = ({ isOpen, onClose }) => {
   const settingsStore = useSettingsStore();
-  const [activeTab, setActiveTab] = useState('general');
-  const [localSettings, setLocalSettings] = useState({ ...settingsStore.settings });
-  const [passwordData, setPasswordData] = useState({ 
-    current: '', 
-    new: '', 
-    confirm: '' 
+  const { settings, updateSettings, changePassword } = settingsStore;
+  
+  const [formData, setFormData] = useState({
+    app_name: 'FamControl v2',
+    currency: 'COP',
+    use_thousands_separator: true,
+    primary_color: '#2563eb',
+    secondary_color: '#10b981'
   });
-  const [changingPassword, setChangingPassword] = useState(false);
+  
+  const [passwordData, setPasswordData] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: ''
+  });
 
-  const currencyOptions = [
-    { label: 'Peso Colombiano (COP)', value: 'COP' },
-    { label: 'Dólar Americano (USD)', value: 'USD' },
-    { label: 'Euro (EUR)', value: 'EUR' },
-    { label: 'Peso Mexicano (MXN)', value: 'MXN' }
-  ];
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState({ type: '', text: '' });
 
+  // Actualizar formData cuando las settings cambien
   useEffect(() => {
-    if (isOpen) {
-      setLocalSettings({ ...settingsStore.settings });
-      setPasswordData({ current: '', new: '', confirm: '' });
+    if (isOpen && settings) {
+      setFormData({
+        app_name: settings.app_name || 'FamControl v2',
+        currency: settings.currency || 'COP',
+        use_thousands_separator: settings.use_thousands_separator ?? true,
+        primary_color: settings.primary_color || '#2563eb',
+        secondary_color: settings.secondary_color || '#10b981'
+      });
     }
-  }, [isOpen, settingsStore.settings]);
+  }, [isOpen, settings]);
 
-  const handleSaveSettings = async () => {
-    const success = await settingsStore.saveSettings(localSettings);
-    if (success) {
-      alert('Configuración guardada correctamente');
-      onClose();
-    } else {
-      alert('Error al guardar la configuración');
+  const showMessage = (type, text) => {
+    setMessage({ type, text });
+    setTimeout(() => setMessage({ type: '', text: '' }), 3000);
+  };
+
+  const handleSave = async () => {
+    try {
+      setLoading(true);
+      
+      // Validar que el nombre no esté vacío
+      if (!formData.app_name.trim()) {
+        showMessage('error', 'El nombre de la aplicación no puede estar vacío');
+        return;
+      }
+
+      const success = await updateSettings(formData);
+      
+      if (success) {
+        showMessage('success', 'Configuración guardada correctamente');
+        setTimeout(() => {
+          onClose();
+        }, 1000);
+      } else {
+        showMessage('error', 'Error al guardar la configuración');
+      }
+    } catch (error) {
+      console.error('Error saving settings:', error);
+      showMessage('error', 'Error al guardar la configuración');
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleChangePassword = async () => {
-    if (passwordData.new !== passwordData.confirm) {
-      alert('Las contraseñas no coinciden');
-      return;
-    }
+  const handlePasswordChange = async () => {
+    try {
+      // Validaciones
+      if (!passwordData.currentPassword) {
+        showMessage('error', 'Ingresa tu contraseña actual');
+        return;
+      }
 
-    setChangingPassword(true);
-    const result = await settingsStore.changePassword(
-      passwordData.current,
-      passwordData.new
-    );
-    
-    setChangingPassword(false);
+      if (!passwordData.newPassword) {
+        showMessage('error', 'Ingresa una nueva contraseña');
+        return;
+      }
 
-    if (result.success) {
-      alert('Contraseña cambiada correctamente');
-      setPasswordData({ current: '', new: '', confirm: '' });
-    } else {
-      alert(result.error || 'Error al cambiar contraseña');
+      if (passwordData.newPassword.length < 6) {
+        showMessage('error', 'La contraseña debe tener al menos 6 caracteres');
+        return;
+      }
+
+      if (passwordData.newPassword !== passwordData.confirmPassword) {
+        showMessage('error', 'Las contraseñas no coinciden');
+        return;
+      }
+
+      if (passwordData.currentPassword === passwordData.newPassword) {
+        showMessage('error', 'La nueva contraseña debe ser diferente a la actual');
+        return;
+      }
+
+      setLoading(true);
+      
+      const result = await changePassword(passwordData.currentPassword, passwordData.newPassword);
+      
+      if (result.success) {
+        showMessage('success', 'Contraseña cambiada correctamente');
+        setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
+      } else {
+        showMessage('error', result.error || 'Error al cambiar la contraseña');
+      }
+    } catch (error) {
+      console.error('Error changing password:', error);
+      showMessage('error', 'Error al cambiar la contraseña');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -75,270 +131,270 @@ const SettingsModal = ({ isOpen, onClose }) => {
     }}>
       <div style={{
         backgroundColor: '#1a1a1a',
+        border: '1px solid #333',
         borderRadius: '1rem',
-        padding: '1.5rem',
+        padding: '2rem',
         width: '90%',
         maxWidth: '500px',
         maxHeight: '90vh',
-        overflow: 'auto'
+        overflowY: 'auto'
       }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
           <h2 style={{ color: 'white', margin: 0 }}>Configuración</h2>
-          <button 
+          <button
             onClick={onClose}
-            style={{ 
-              background: 'none', 
-              border: 'none', 
-              color: 'white', 
-              fontSize: '1.5rem', 
-              cursor: 'pointer' 
+            style={{
+              background: 'none',
+              border: 'none',
+              color: '#999',
+              fontSize: '1.5rem',
+              cursor: 'pointer'
             }}
           >
-            ×
+            ✕
           </button>
         </div>
 
-        {/* Tabs */}
-        <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem', borderBottom: '1px solid #333' }}>
-          <button
-            onClick={() => setActiveTab('general')}
-            style={{
-              padding: '0.5rem 1rem',
-              background: activeTab === 'general' ? '#2563eb' : 'transparent',
-              border: 'none',
-              color: 'white',
-              cursor: 'pointer',
-              borderRadius: '0.5rem 0.5rem 0 0'
-            }}
-          >
-            General
-          </button>
-          <button
-            onClick={() => setActiveTab('security')}
-            style={{
-              padding: '0.5rem 1rem',
-              background: activeTab === 'security' ? '#2563eb' : 'transparent',
-              border: 'none',
-              color: 'white',
-              cursor: 'pointer',
-              borderRadius: '0.5rem 0.5rem 0 0'
-            }}
-          >
-            Seguridad
-          </button>
-        </div>
-
-        {/* General Tab */}
-        {activeTab === 'general' && (
-          <div>
-            <div style={{ marginBottom: '1rem' }}>
-              <label style={{ color: 'white', display: 'block', marginBottom: '0.5rem' }}>
-                Nombre de la App
-              </label>
-              <input
-                type="text"
-                value={localSettings.app_name}
-                onChange={(e) => setLocalSettings({ ...localSettings, app_name: e.target.value })}
-                style={{
-                  width: '100%',
-                  padding: '0.75rem',
-                  border: '1px solid #333',
-                  borderRadius: '0.5rem',
-                  backgroundColor: '#2a2a2a',
-                  color: 'white'
-                }}
-              />
-            </div>
-
-            <div style={{ marginBottom: '1rem' }}>
-              <label style={{ color: 'white', display: 'block', marginBottom: '0.5rem' }}>
-                Moneda
-              </label>
-              <select
-                value={localSettings.currency}
-                onChange={(e) => setLocalSettings({ ...localSettings, currency: e.target.value })}
-                style={{
-                  width: '100%',
-                  padding: '0.75rem',
-                  border: '1px solid #333',
-                  borderRadius: '0.5rem',
-                  backgroundColor: '#2a2a2a',
-                  color: 'white'
-                }}
-              >
-                {currencyOptions.map(option => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div style={{ marginBottom: '1rem' }}>
-              <label style={{ color: 'white', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <input
-                  type="checkbox"
-                  checked={localSettings.thousands_separator}
-                  onChange={(e) => setLocalSettings({ ...localSettings, thousands_separator: e.target.checked })}
-                />
-                Usar separador de miles
-              </label>
-            </div>
-
-            <div style={{ marginTop: '1.5rem' }}>
-              <h3 style={{ color: 'white', marginBottom: '1rem' }}>Colores de la Interfaz</h3>
-              
-              <div style={{ display: 'grid', gap: '1rem' }}>
-                <div>
-                  <label style={{ color: 'white', display: 'block', marginBottom: '0.5rem' }}>
-                    Color Primario
-                  </label>
-                  <input
-                    type="color"
-                    value={localSettings.color_primary}
-                    onChange={(e) => setLocalSettings({ ...localSettings, color_primary: e.target.value })}
-                    style={{ width: '100%', height: '40px' }}
-                  />
-                </div>
-                
-                <div>
-                  <label style={{ color: 'white', display: 'block', marginBottom: '0.5rem' }}>
-                    Color Secundario
-                  </label>
-                  <input
-                    type="color"
-                    value={localSettings.color_secondary}
-                    onChange={(e) => setLocalSettings({ ...localSettings, color_secondary: e.target.value })}
-                    style={{ width: '100%', height: '40px' }}
-                  />
-                </div>
-                
-                <div>
-                  <label style={{ color: 'white', display: 'block', marginBottom: '0.5rem' }}>
-                    Color de Acento
-                  </label>
-                  <input
-                    type="color"
-                    value={localSettings.color_accent}
-                    onChange={(e) => setLocalSettings({ ...localSettings, color_accent: e.target.value })}
-                    style={{ width: '100%', height: '40px' }}
-                  />
-                </div>
-              </div>
-            </div>
+        {/* Mensaje de estado */}
+        {message.text && (
+          <div style={{
+            padding: '0.75rem',
+            marginBottom: '1rem',
+            borderRadius: '0.5rem',
+            backgroundColor: message.type === 'success' ? '#1a3a1a' : '#3a1a1a',
+            color: message.type === 'success' ? '#10b981' : '#ef4444',
+            fontSize: '0.875rem'
+          }}>
+            {message.type === 'success' ? '✓ ' : '✗ '}{message.text}
           </div>
         )}
 
-        {/* Security Tab */}
-        {activeTab === 'security' && (
-          <div>
-            <div style={{ marginBottom: '1rem' }}>
-              <label style={{ color: 'white', display: 'block', marginBottom: '0.5rem' }}>
-                Contraseña Actual
-              </label>
-              <input
-                type="password"
-                value={passwordData.current}
-                onChange={(e) => setPasswordData({ ...passwordData, current: e.target.value })}
-                style={{
-                  width: '100%',
-                  padding: '0.75rem',
-                  border: '1px solid #333',
-                  borderRadius: '0.5rem',
-                  backgroundColor: '#2a2a2a',
-                  color: 'white'
-                }}
-              />
-            </div>
-
-            <div style={{ marginBottom: '1rem' }}>
-              <label style={{ color: 'white', display: 'block', marginBottom: '0.5rem' }}>
-                Nueva Contraseña
-              </label>
-              <input
-                type="password"
-                value={passwordData.new}
-                onChange={(e) => setPasswordData({ ...passwordData, new: e.target.value })}
-                style={{
-                  width: '100%',
-                  padding: '0.75rem',
-                  border: '1px solid #333',
-                  borderRadius: '0.5rem',
-                  backgroundColor: '#2a2a2a',
-                  color: 'white'
-                }}
-              />
-            </div>
-
-            <div style={{ marginBottom: '1.5rem' }}>
-              <label style={{ color: 'white', display: 'block', marginBottom: '0.5rem' }}>
-                Confirmar Nueva Contraseña
-              </label>
-              <input
-                type="password"
-                value={passwordData.confirm}
-                onChange={(e) => setPasswordData({ ...passwordData, confirm: e.target.value })}
-                style={{
-                  width: '100%',
-                  padding: '0.75rem',
-                  border: '1px solid #333',
-                  borderRadius: '0.5rem',
-                  backgroundColor: '#2a2a2a',
-                  color: 'white'
-                }}
-              />
-            </div>
-
-            <button 
-              onClick={handleChangePassword}
-              disabled={changingPassword}
+        {/* Personalización */}
+        <div style={{ marginBottom: '1.5rem' }}>
+          <h3 style={{ color: 'white', margin: '0 0 1rem 0', fontSize: '1rem' }}>Personalización</h3>
+          
+          <div style={{ marginBottom: '1rem' }}>
+            <label style={{ display: 'block', color: '#ccc', marginBottom: '0.5rem', fontSize: '0.875rem' }}>
+              Nombre de la aplicación
+            </label>
+            <input
+              type="text"
+              value={formData.app_name}
+              onChange={(e) => setFormData({ ...formData, app_name: e.target.value })}
+              disabled={loading}
               style={{
                 width: '100%',
                 padding: '0.75rem',
-                backgroundColor: changingPassword ? '#6b7280' : '#2563eb',
-                color: 'white',
-                border: 'none',
+                border: '1px solid #333',
                 borderRadius: '0.5rem',
-                cursor: changingPassword ? 'not-allowed' : 'pointer',
-                fontWeight: '600'
+                backgroundColor: '#2a2a2a',
+                color: 'white',
+                boxSizing: 'border-box',
+                opacity: loading ? 0.6 : 1
+              }}
+            />
+          </div>
+
+          <div style={{ marginBottom: '1rem' }}>
+            <label style={{ display: 'block', color: '#ccc', marginBottom: '0.5rem', fontSize: '0.875rem' }}>
+              Moneda
+            </label>
+            <select
+              value={formData.currency}
+              onChange={(e) => setFormData({ ...formData, currency: e.target.value })}
+              disabled={loading}
+              style={{
+                width: '100%',
+                padding: '0.75rem',
+                border: '1px solid #333',
+                borderRadius: '0.5rem',
+                backgroundColor: '#2a2a2a',
+                color: 'white',
+                boxSizing: 'border-box',
+                opacity: loading ? 0.6 : 1
               }}
             >
-              {changingPassword ? 'Cambiando...' : 'Cambiar Contraseña'}
-            </button>
+              <option value="COP">COP - Peso Colombiano</option>
+              <option value="USD">USD - Dólar Americano</option>
+              <option value="EUR">EUR - Euro</option>
+              <option value="MXN">MXN - Peso Mexicano</option>
+            </select>
           </div>
-        )}
 
-        {/* Action Buttons */}
-        <div style={{ display: 'flex', gap: '1rem', marginTop: '1.5rem' }}>
+          <div style={{ marginBottom: '1rem' }}>
+            <label style={{ display: 'flex', alignItems: 'center', color: '#ccc', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={formData.use_thousands_separator}
+                onChange={(e) => setFormData({ ...formData, use_thousands_separator: e.target.checked })}
+                disabled={loading}
+                style={{ marginRight: '0.5rem', cursor: 'pointer' }}
+              />
+              <span style={{ fontSize: '0.875rem' }}>Usar separador de miles</span>
+            </label>
+          </div>
+
+          <div style={{ marginBottom: '1rem' }}>
+            <label style={{ display: 'block', color: '#ccc', marginBottom: '0.5rem', fontSize: '0.875rem' }}>
+              Color primario
+            </label>
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+              <input
+                type="color"
+                value={formData.primary_color}
+                onChange={(e) => setFormData({ ...formData, primary_color: e.target.value })}
+                disabled={loading}
+                style={{
+                  width: '50px',
+                  height: '40px',
+                  padding: '0.25rem',
+                  border: '1px solid #333',
+                  borderRadius: '0.5rem',
+                  cursor: loading ? 'not-allowed' : 'pointer'
+                }}
+              />
+              <span style={{ color: '#999', fontSize: '0.875rem' }}>{formData.primary_color}</span>
+            </div>
+          </div>
+
+          <div style={{ marginBottom: '1rem' }}>
+            <label style={{ display: 'block', color: '#ccc', marginBottom: '0.5rem', fontSize: '0.875rem' }}>
+              Color secundario
+            </label>
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+              <input
+                type="color"
+                value={formData.secondary_color}
+                onChange={(e) => setFormData({ ...formData, secondary_color: e.target.value })}
+                disabled={loading}
+                style={{
+                  width: '50px',
+                  height: '40px',
+                  padding: '0.25rem',
+                  border: '1px solid #333',
+                  borderRadius: '0.5rem',
+                  cursor: loading ? 'not-allowed' : 'pointer'
+                }}
+              />
+              <span style={{ color: '#999', fontSize: '0.875rem' }}>{formData.secondary_color}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Separador */}
+        <div style={{ borderTop: '1px solid #333', margin: '1.5rem 0' }}></div>
+
+        {/* Cambiar Contraseña */}
+        <div style={{ marginBottom: '1.5rem' }}>
+          <h3 style={{ color: 'white', margin: '0 0 1rem 0', fontSize: '1rem' }}>Cambiar Contraseña</h3>
+          
+          <div style={{ marginBottom: '1rem' }}>
+            <input
+              type="password"
+              placeholder="Contraseña actual"
+              value={passwordData.currentPassword}
+              onChange={(e) => setPasswordData({ ...passwordData, currentPassword: e.target.value })}
+              disabled={loading}
+              style={{
+                width: '100%',
+                padding: '0.75rem',
+                border: '1px solid #333',
+                borderRadius: '0.5rem',
+                backgroundColor: '#2a2a2a',
+                color: 'white',
+                marginBottom: '0.5rem',
+                boxSizing: 'border-box',
+                opacity: loading ? 0.6 : 1
+              }}
+            />
+            <input
+              type="password"
+              placeholder="Nueva contraseña"
+              value={passwordData.newPassword}
+              onChange={(e) => setPasswordData({ ...passwordData, newPassword: e.target.value })}
+              disabled={loading}
+              style={{
+                width: '100%',
+                padding: '0.75rem',
+                border: '1px solid #333',
+                borderRadius: '0.5rem',
+                backgroundColor: '#2a2a2a',
+                color: 'white',
+                marginBottom: '0.5rem',
+                boxSizing: 'border-box',
+                opacity: loading ? 0.6 : 1
+              }}
+            />
+            <input
+              type="password"
+              placeholder="Confirmar nueva contraseña"
+              value={passwordData.confirmPassword}
+              onChange={(e) => setPasswordData({ ...passwordData, confirmPassword: e.target.value })}
+              disabled={loading}
+              style={{
+                width: '100%',
+                padding: '0.75rem',
+                border: '1px solid #333',
+                borderRadius: '0.5rem',
+                backgroundColor: '#2a2a2a',
+                color: 'white',
+                boxSizing: 'border-box',
+                opacity: loading ? 0.6 : 1
+              }}
+            />
+          </div>
           <button
-            onClick={onClose}
+            onClick={handlePasswordChange}
+            disabled={loading}
             style={{
-              flex: 1,
-              padding: '0.75rem',
-              backgroundColor: '#6b7280',
+              width: '100%',
+              padding: '0.75rem 1rem',
+              backgroundColor: loading ? '#555' : '#2563eb',
               color: 'white',
               border: 'none',
               borderRadius: '0.5rem',
-              cursor: 'pointer',
-              fontWeight: '600'
+              cursor: loading ? 'not-allowed' : 'pointer',
+              fontWeight: '600',
+              fontSize: '0.875rem'
+            }}
+          >
+            {loading ? 'Procesando...' : 'Cambiar Contraseña'}
+          </button>
+        </div>
+
+        {/* Botones de acción */}
+        <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end', borderTop: '1px solid #333', paddingTop: '1.5rem' }}>
+          <button
+            onClick={onClose}
+            disabled={loading}
+            style={{
+              padding: '0.75rem 1.5rem',
+              backgroundColor: 'transparent',
+              color: loading ? '#666' : 'white',
+              border: `1px solid ${loading ? '#555' : '#333'}`,
+              borderRadius: '0.5rem',
+              cursor: loading ? 'not-allowed' : 'pointer',
+              fontWeight: '600',
+              fontSize: '0.875rem'
             }}
           >
             Cancelar
           </button>
           <button
-            onClick={handleSaveSettings}
+            onClick={handleSave}
+            disabled={loading}
             style={{
-              flex: 1,
-              padding: '0.75rem',
-              backgroundColor: '#2563eb',
+              padding: '0.75rem 1.5rem',
+              backgroundColor: loading ? '#0d7944' : '#10b981',
               color: 'white',
               border: 'none',
               borderRadius: '0.5rem',
-              cursor: 'pointer',
-              fontWeight: '600'
+              cursor: loading ? 'not-allowed' : 'pointer',
+              fontWeight: '600',
+              fontSize: '0.875rem'
             }}
           >
-            Guardar
+            {loading ? 'Guardando...' : 'Guardar'}
           </button>
         </div>
       </div>

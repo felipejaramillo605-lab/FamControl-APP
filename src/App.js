@@ -96,6 +96,9 @@ export default function FamControl() {
   useEffect(() => {
     const checkSession = async () => {
       try {
+        // Validar que estamos en el navegador
+        if (typeof window === 'undefined') return;
+        
         const { data: { session }, error } = await supabase.auth.getSession();
       
         if (error) {
@@ -107,7 +110,11 @@ export default function FamControl() {
           const userEmail = session.user.email;
           const userId = session.user.id;
           setUser(userEmail);
-          localStorage.setItem('famcontrol_current_user', userEmail);
+          
+          // Solo usar localStorage en navegador
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('famcontrol_current_user', userEmail);
+          }
         
           await loadUserData(userId);
           await debugSync(userId);
@@ -116,14 +123,17 @@ export default function FamControl() {
         console.error('Error crítico:', error);
       }
     };
-  
+
     checkSession();
   }, []);
 
   // NUEVO: Cargar configuraciones al iniciar
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+    
     settingsStore.loadSettings();
-  }, [settingsStore]);
+    settingsStore.loadRandomQuote();
+  }, []);
 
   const debugSync = async (userId) => {
     console.log('🔍 DEBUG Sincronización');
@@ -176,6 +186,8 @@ export default function FamControl() {
         
         alert('Registro exitoso! Ya puedes iniciar sesión');
         setRegisterMode(false);
+        setLoginEmail('');
+        setLoginPassword('');
         
       } else {
         const { data, error } = await supabase.auth.signInWithPassword({
@@ -189,7 +201,13 @@ export default function FamControl() {
         }
         
         setUser(loginEmail);
-        localStorage.setItem('famcontrol_current_user', loginEmail);
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('famcontrol_current_user', loginEmail);
+        }
+        const { data: { user: currentUser } } = await supabase.auth.getUser();
+        if (currentUser) {
+          await loadUserData(currentUser.id);
+        }
         await checkSupabaseConnection();
       }
       
@@ -204,6 +222,8 @@ export default function FamControl() {
 
   const loadUserData = async (userId) => {
     try {
+      if (typeof window === 'undefined') return;
+      
       console.log('🔄 Cargando datos para usuario:', userId);
       
       const { data: accountsData, error: accountsError } = await supabase
@@ -849,9 +869,15 @@ export default function FamControl() {
           <span style={{ fontSize: '0.875rem', color: textSec }}>{user}</span>
           <button 
             onClick={async () => { 
-              await supabase.auth.signOut(); 
-              setUser(null); 
-              localStorage.removeItem('famcontrol_current_user'); 
+              try {
+                await supabase.auth.signOut(); 
+                setUser(null);
+                if (typeof window !== 'undefined') {
+                  localStorage.removeItem('famcontrol_current_user');
+                }
+              } catch (error) {
+                console.error('Error al cerrar sesión:', error);
+              }
             }} 
             style={{ 
               display: 'flex', 
