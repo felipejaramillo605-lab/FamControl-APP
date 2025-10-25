@@ -6,6 +6,17 @@ import React, { useState, useEffect } from 'react';
 import { Plus, Trash2, Edit2, LogOut, BarChart3, Calendar, DollarSign, Home, Moon, Sun, ShoppingCart, Wallet, TrendingUp, ArrowRightLeft, Download, Upload, Target, Star } from 'lucide-react';
 import { PieChart, Pie, BarChart, Bar, ResponsiveContainer, Cell, Tooltip, XAxis, YAxis } from 'recharts';
 
+const DEFAULT_CATEGORIES = [
+  { id: 'alimentacion', name: 'Alimentación', icon: '🍔', color: '#ef4444' },
+  { id: 'transporte', name: 'Transporte', icon: '🚗', color: '#3b82f6' },
+  { id: 'entretenimiento', name: 'Entretenimiento', icon: '🎬', color: '#8b5cf6' },
+  { id: 'salud', name: 'Salud', icon: '⚕️', color: '#10b981' },
+  { id: 'educacion', name: 'Educación', icon: '📚', color: '#f59e0b' },
+  { id: 'servicios', name: 'Servicios', icon: '💡', color: '#06b6d4' },
+  { id: 'compras', name: 'Compras', icon: '🛍️', color: '#ec4899' },
+  { id: 'otros', name: 'Otros', icon: '📦', color: '#6b7280' }
+];
+
 const ACCOUNT_CATEGORIES = {
   efectivo: { name: 'Efectivo', icon: '💵', types: ['efectivo'] },
   debito: { 
