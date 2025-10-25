@@ -6,20 +6,32 @@ import React, { useState, useEffect } from 'react';
 import { Plus, Trash2, Edit2, LogOut, BarChart3, Calendar, DollarSign, Home, Moon, Sun, ShoppingCart, Wallet, TrendingUp, ArrowRightLeft, Download, Upload, Target, Star } from 'lucide-react';
 import { PieChart, Pie, BarChart, Bar, ResponsiveContainer, Cell, Tooltip, XAxis, YAxis } from 'recharts';
 
-const DEFAULT_CATEGORIES = [
-  { id: 'alimentacion', name: 'Alimentación', color: '#10b981', icon: '🍔' },
-  { id: 'transporte', name: 'Transporte', color: '#3b82f6', icon: '🚗' },
-  { id: 'salud', name: 'Salud', color: '#ef4444', icon: '⚕️' },
-  { id: 'entretenimiento', name: 'Entretenimiento', color: '#8b5cf6', icon: '🎮' },
-  { id: 'servicios', name: 'Servicios', color: '#f59e0b', icon: '💡' },
-  { id: 'educacion', name: 'Educación', color: '#06b6d4', icon: '📚' },
-  { id: 'otros', name: 'Otros', color: '#6b7280', icon: '📦' }
-];
+const ACCOUNT_CATEGORIES = {
+  efectivo: { name: 'Efectivo', icon: '💵', types: ['efectivo'] },
+  debito: { 
+    name: 'Débito', 
+    icon: '📊',
+    types: [
+      { id: 'ahorro', name: 'Cuenta de Ahorro', icon: '🏦' },
+      { id: 'billetera', name: 'Billetera Digital', icon: '👛' },
+      { id: 'fiducia', name: 'Fiducia', icon: '📋' },
+      { id: 'cdt', name: 'CDT', icon: '📈' },
+      { id: 'inversion', name: 'Inversiones', icon: '💹' }
+    ]
+  },
+  credito: { 
+    name: 'Crédito', 
+    icon: '💳',
+    types: [
+      { id: 'hipotecario', name: 'Crédito Hipotecario', icon: '🏠' },
+      { id: 'prestamo', name: 'Préstamo', icon: '📌' },
+      { id: 'tarjeta', name: 'Tarjeta de Crédito', icon: '💳' }
+    ]
+  }
+};
 
 const DEFAULT_ACCOUNTS = [
-  { id: 'efectivo', name: 'Efectivo', icon: '💵', saldo: 0 },
-  { id: 'banco', name: 'Banco', icon: '🏦', saldo: 0 },
-  { id: 'tarjeta', name: 'Tarjeta', icon: '💳', saldo: 0 }
+  { id: 'efectivo_default', name: 'Efectivo', icon: '💵', saldo: 0, tipo: 'efectivo', categoria: 'efectivo' }
 ];
 
 export default function FamControl() {
@@ -86,12 +98,12 @@ export default function FamControl() {
   });
 
   const [accountForm, setAccountForm] = useState({
-    name: '',
-    type: 'banco',
-    icon: '🏦',
-    saldo: 0
-  });
-  const [showAddAccount, setShowAddAccount] = useState(false);
+  name: '',
+  categoria: 'debito', // efectivo, debito, credito
+  tipo: '', // depende de la categoria
+  saldo: 0
+});
+const [showAddAccount, setShowAddAccount] = useState(false);
 
   useEffect(() => {
     const checkSession = async () => {
@@ -237,9 +249,14 @@ export default function FamControl() {
       }
     
       if (accountsData && accountsData.length > 0) {
-        console.log('✅ Cuentas cargadas:', accountsData.length);
-        setAccounts(accountsData);
-      } else {
+  console.log('✅ Cuentas cargadas:', accountsData.length);
+  // Agregar categoria a cuentas antiguas que no la tengan
+  const updatedAccounts = accountsData.map(acc => ({
+    ...acc,
+    categoria: acc.categoria || 'debito' // Por defecto débito si no tiene
+  }));
+  setAccounts(updatedAccounts);
+} else {
         console.log('🆕 Creando cuentas predeterminadas');
         const defaultAccs = DEFAULT_ACCOUNTS.map(acc => ({
           ...acc,
@@ -659,40 +676,59 @@ export default function FamControl() {
   };
 
   const addAccount = async () => {
-    if (!accountForm.name) {
-      alert('Por favor ingresa un nombre para la cuenta');
-      return;
+  if (!accountForm.name || !accountForm.tipo) {
+    alert('Por favor completa todos los campos');
+    return;
+  }
+  
+  try {
+    const { data: { user: currentUser } } = await supabase.auth.getUser();
+    if (!currentUser) throw new Error('No hay usuario autenticado');
+    
+    const newId = `account_${Date.now()}`;
+    
+    // Determinar si es débito (positivo) o crédito (negativo)
+    let finalSaldo = parseFloat(accountForm.saldo) || 0;
+    if (accountForm.categoria === 'credito') {
+      // Las deudas se guardan como negativos
+      finalSaldo = -Math.abs(finalSaldo);
+    } else {
+      // Los débitos y efectivo como positivos
+      finalSaldo = Math.abs(finalSaldo);
     }
     
-    try {
-      const { data: { user: currentUser } } = await supabase.auth.getUser();
-      if (!currentUser) throw new Error('No hay usuario autenticado');
-      
-      const newId = `account_${Date.now()}`;
-      const newAccount = {
-        id: newId,
-        name: accountForm.name,
-        icon: accountForm.icon,
-        tipo: accountForm.type,
-        saldo: parseFloat(accountForm.saldo) || 0,
-        user_id: currentUser.id,
-        created_at: new Date().toISOString()
-      };
-      
-      const { error } = await supabase
-        .from('accounts')
-        .upsert(newAccount);
-      
-      if (error) throw error;
-      
-      setAccounts(prev => [...prev, newAccount]);
-      setAccountForm({ name: '', type: 'banco', icon: '🏦', saldo: 0 });
-      setShowAddAccount(false);
-    } catch (error) {
-      console.error('Error guardando cuenta:', error);
-      alert('Error al guardar la cuenta: ' + error.message);
-    }
-  };
+    // Obtener el icon según el tipo
+    const typeObj = Object.values(ACCOUNT_CATEGORIES)
+      .find(cat => cat.types && cat.types.some(t => t.id === accountForm.tipo));
+    const selectedType = typeObj?.types.find(t => t.id === accountForm.tipo);
+    
+    const newAccount = {
+      id: newId,
+      name: accountForm.name,
+      icon: selectedType?.icon || '💰',
+      tipo: accountForm.tipo,
+      categoria: accountForm.categoria,
+      saldo: finalSaldo,
+      user_id: currentUser.id,
+      created_at: new Date().toISOString()
+    };
+    
+    const { error } = await supabase
+      .from('accounts')
+      .upsert(newAccount);
+    
+    if (error) throw error;
+    
+    setAccounts(prev => [...prev, newAccount]);
+    setAccountForm({ name: '', categoria: 'debito', tipo: '', saldo: 0 });
+    setShowAddAccount(false);
+    
+    console.log('✅ Cuenta guardada exitosamente');
+  } catch (error) {
+    console.error('Error guardando cuenta:', error);
+    alert('Error al guardar la cuenta: ' + error.message);
+  }
+};
 
   const deleteAccount = async (accountId) => {
     const hasTransactions = Object.values(transactions).some(
@@ -804,6 +840,29 @@ export default function FamControl() {
       return { categoria: cat.name, color: cat.color, presupuesto: parseFloat(budget.monto), gastado: spent, porcentaje: Math.min(percentage, 100), alerta: percentage >= 80 };
     }).filter(b => b);
   };
+
+const getAccountTypes = (categoria) => {
+  const catData = ACCOUNT_CATEGORIES[categoria];
+  if (!catData) return [];
+  if (categoria === 'efectivo') return [{ id: 'efectivo', name: 'Efectivo', icon: '💵' }];
+  return catData.types || [];
+};
+
+const groupAccountsByCategory = () => {
+  const grouped = {
+    efectivo: [],
+    debito: [],
+    credito: []
+  };
+  
+  accounts.forEach(acc => {
+    if (acc.categoria === 'efectivo') grouped.efectivo.push(acc);
+    else if (acc.categoria === 'debito') grouped.debito.push(acc);
+    else if (acc.categoria === 'credito') grouped.credito.push(acc);
+  });
+  
+  return grouped;
+};
 
   const bg = darkMode ? '#0a0a0a' : '#f5f5f5';
   const card = darkMode ? '#1a1a1a' : '#ffffff';
@@ -1024,134 +1083,231 @@ export default function FamControl() {
         )}
 
         {currentTab === 'cuentas' && (
-          <div style={{ backgroundColor: card, border: `1px solid ${border}`, padding: '1.5rem', borderRadius: '1rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-              <h2 style={{ color: text, margin: 0 }}>Mis Cuentas</h2>
-              <button 
-                onClick={() => setShowAddAccount(!showAddAccount)} 
-                style={{ 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  gap: '0.5rem', 
-                  padding: '0.75rem 1rem', 
-                  backgroundColor: '#10b981', 
-                  color: 'white', 
-                  border: 'none', 
-                  borderRadius: '0.5rem', 
-                  cursor: 'pointer', 
-                  fontWeight: '600' 
-                }}
-              >
-                <Plus size={18} /> Nueva Cuenta
-              </button>
-            </div>
+  <div style={{ backgroundColor: card, border: `1px solid ${border}`, padding: '1.5rem', borderRadius: '1rem' }}>
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+      <h2 style={{ color: text, margin: 0 }}>Mis Cuentas</h2>
+      <button 
+        onClick={() => setShowAddAccount(!showAddAccount)} 
+        style={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          gap: '0.5rem', 
+          padding: '0.75rem 1rem', 
+          backgroundColor: '#10b981', 
+          color: 'white', 
+          border: 'none', 
+          borderRadius: '0.5rem', 
+          cursor: 'pointer', 
+          fontWeight: '600' 
+        }}
+      >
+        <Plus size={18} /> Nueva Cuenta
+      </button>
+    </div>
 
-            {showAddAccount && (
-              <div style={{ 
-                backgroundColor: darkMode ? '#2a2a2a' : '#f9f9f9', 
-                border: `1px solid ${border}`, 
-                padding: '1.5rem', 
-                borderRadius: '0.75rem', 
-                marginBottom: '1.5rem' 
-              }}>
-                <h3 style={{ color: text, margin: '0 0 1rem 0' }}>Agregar Nueva Cuenta</h3>
-                <input 
-                  type="text" 
-                  placeholder="Nombre (ej: Bancolombia Ahorros)" 
-                  value={accountForm.name} 
-                  onChange={(e) => setAccountForm({ ...accountForm, name: e.target.value })} 
-                  style={{ 
-                    width: '100%', 
-                    padding: '0.75rem', 
-                    border: `1px solid ${border}`, 
-                    borderRadius: '0.5rem', 
-                    backgroundColor: input, 
-                    color: text, 
-                    marginBottom: '1rem', 
-                    boxSizing: 'border-box' 
-                  }} 
-                />
-                <select 
-                  value={accountForm.type} 
-                  onChange={(e) => setAccountForm({ ...accountForm, type: e.target.value, icon: getIconForType(e.target.value) })} 
-                  style={{ 
-                    width: '100%', 
-                    padding: '0.75rem', 
-                    border: `1px solid ${border}`, 
-                    borderRadius: '0.5rem', 
-                    backgroundColor: input, 
-                    color: text, 
-                    marginBottom: '1rem', 
-                    boxSizing: 'border-box' 
-                  }}
-                >
-                  <option value="banco">🏦 Banco</option>
-                  <option value="tarjeta">💳 Tarjeta de Crédito</option>
-                  <option value="efectivo">💵 Efectivo</option>
-                  <option value="billetera">👛 Billetera Digital</option>
-                  <option value="ahorro">🐷 Cuenta de Ahorro</option>
-                </select>
-                <input 
-                  type="number" 
-                  placeholder="Saldo inicial" 
-                  value={accountForm.saldo} 
-                  onChange={(e) => setAccountForm({ ...accountForm, saldo: e.target.value })} 
-                  style={{ 
-                    width: '100%', 
-                    padding: '0.75rem', 
-                    border: `1px solid ${border}`, 
-                    borderRadius: '0.5rem', 
-                    backgroundColor: input, 
-                    color: text, 
-                    marginBottom: '1rem', 
-                    boxSizing: 'border-box' 
-                  }} 
-                />
-                <div style={{ display: 'flex', gap: '1rem' }}>
-                  <button 
-                    onClick={addAccount} 
-                    style={{ 
-                      flex: 1, 
-                      padding: '0.75rem', 
-                      backgroundColor: '#10b981', 
-                      color: 'white', 
-                      border: 'none', 
-                      borderRadius: '0.5rem', 
-                      fontWeight: '600', 
-                      cursor: 'pointer' 
-                    }}
-                  >
-                    Guardar
-                  </button>
-                  <button 
-                    onClick={() => setShowAddAccount(false)} 
-                    style={{ 
-                      flex: 1, 
-                      padding: '0.75rem', 
-                      backgroundColor: '#6b7280', 
-                      color: 'white', 
-                      border: 'none', 
-                      borderRadius: '0.5rem', 
-                      fontWeight: '600', 
-                      cursor: 'pointer' 
-                    }}
-                  >
-                    Cancelar
-                  </button>
-                </div>
+    {showAddAccount && (
+      <div style={{ 
+        backgroundColor: darkMode ? '#2a2a2a' : '#f9f9f9', 
+        border: `1px solid ${border}`, 
+        padding: '1.5rem', 
+        borderRadius: '0.75rem', 
+        marginBottom: '1.5rem' 
+      }}>
+        <h3 style={{ color: text, margin: '0 0 1rem 0' }}>Agregar Nueva Cuenta</h3>
+        
+        <div style={{ marginBottom: '1rem' }}>
+          <label style={{ display: 'block', color: textSec, marginBottom: '0.5rem', fontSize: '0.875rem' }}>
+            Ingresa el nombre de la cuenta
+          </label>
+          <input 
+            type="text" 
+            placeholder="ej: Bancolombia Ahorros" 
+            value={accountForm.name} 
+            onChange={(e) => setAccountForm({ ...accountForm, name: e.target.value })} 
+            style={{ 
+              width: '100%', 
+              padding: '0.75rem', 
+              border: `1px solid ${border}`, 
+              borderRadius: '0.5rem', 
+              backgroundColor: input, 
+              color: text, 
+              boxSizing: 'border-box' 
+            }} 
+          />
+        </div>
+
+        <div style={{ marginBottom: '1rem' }}>
+          <label style={{ display: 'block', color: textSec, marginBottom: '0.5rem', fontSize: '0.875rem' }}>
+            Selecciona la categoría de la cuenta
+          </label>
+          <select 
+            value={accountForm.categoria} 
+            onChange={(e) => setAccountForm({ ...accountForm, categoria: e.target.value, tipo: '' })} 
+            style={{ 
+              width: '100%', 
+              padding: '0.75rem', 
+              border: `1px solid ${border}`, 
+              borderRadius: '0.5rem', 
+              backgroundColor: input, 
+              color: text, 
+              boxSizing: 'border-box' 
+            }}
+          >
+            <option value="efectivo">💵 Efectivo</option>
+            <option value="debito">📊 Débito (Dinero que tengo)</option>
+            <option value="credito">💳 Crédito (Deuda)</option>
+          </select>
+        </div>
+
+        <div style={{ marginBottom: '1rem' }}>
+          <label style={{ display: 'block', color: textSec, marginBottom: '0.5rem', fontSize: '0.875rem' }}>
+            Selecciona el tipo de cuenta
+          </label>
+          <select 
+            value={accountForm.tipo} 
+            onChange={(e) => setAccountForm({ ...accountForm, tipo: e.target.value })} 
+            style={{ 
+              width: '100%', 
+              padding: '0.75rem', 
+              border: `1px solid ${border}`, 
+              borderRadius: '0.5rem', 
+              backgroundColor: input, 
+              color: text, 
+              boxSizing: 'border-box' 
+            }}
+          >
+            <option value="">Selecciona un tipo</option>
+            {getAccountTypes(accountForm.categoria).map(type => (
+              <option key={type.id} value={type.id}>
+                {type.icon} {type.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div style={{ marginBottom: '1rem' }}>
+          <label style={{ display: 'block', color: textSec, marginBottom: '0.5rem', fontSize: '0.875rem' }}>
+            {accountForm.categoria === 'credito' ? 'Total adeudado' : 'Agrega saldo de la cuenta'}
+          </label>
+          <input 
+            type="number" 
+            placeholder="0" 
+            value={accountForm.saldo} 
+            onChange={(e) => setAccountForm({ ...accountForm, saldo: e.target.value })} 
+            style={{ 
+              width: '100%', 
+              padding: '0.75rem', 
+              border: `1px solid ${border}`, 
+              borderRadius: '0.5rem', 
+              backgroundColor: input, 
+              color: text, 
+              boxSizing: 'border-box' 
+            }} 
+          />
+          {accountForm.categoria === 'credito' && (
+            <p style={{ fontSize: '0.75rem', color: '#ef4444', margin: '0.5rem 0 0 0' }}>
+              ⚠️ Este monto se guardará como deuda (negativo)
+            </p>
+          )}
+        </div>
+
+        <div style={{ display: 'flex', gap: '1rem' }}>
+          <button 
+            onClick={addAccount} 
+            style={{ 
+              flex: 1, 
+              padding: '0.75rem', 
+              backgroundColor: '#10b981', 
+              color: 'white', 
+              border: 'none', 
+              borderRadius: '0.5rem', 
+              fontWeight: '600', 
+              cursor: 'pointer' 
+            }}
+          >
+            Guardar
+          </button>
+          <button 
+            onClick={() => setShowAddAccount(false)} 
+            style={{ 
+              flex: 1, 
+              padding: '0.75rem', 
+              backgroundColor: '#6b7280', 
+              color: 'white', 
+              border: 'none', 
+              borderRadius: '0.5rem', 
+              fontWeight: '600', 
+              cursor: 'pointer' 
+            }}
+          >
+            Cancelar
+          </button>
+        </div>
+      </div>
+    )}
+
+    {/* Mostrar cuentas por categoría */}
+    {(() => {
+      const grouped = groupAccountsByCategory();
+      return (
+        <div style={{ display: 'grid', gap: '2rem' }}>
+          {/* EFECTIVO */}
+          {grouped.efectivo.length > 0 && (
+            <div>
+              <h3 style={{ color: text, margin: '0 0 1rem 0', fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                💵 Efectivo
+              </h3>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1rem' }}>
+                {grouped.efectivo.map(acc => (
+                  <div key={acc.id} style={{ 
+                    padding: '1.5rem', 
+                    backgroundColor: darkMode ? '#2a2a2a' : '#f9f9f9', 
+                    borderRadius: '0.75rem', 
+                    border: `2px solid ${border}`,
+                    position: 'relative'
+                  }}>
+                    {!['efectivo_default'].includes(acc.id) && (
+                      <button 
+                        onClick={() => deleteAccount(acc.id)} 
+                        style={{ 
+                          position: 'absolute', 
+                          top: '0.75rem', 
+                          right: '0.75rem', 
+                          background: 'none', 
+                          border: 'none', 
+                          color: '#ef4444', 
+                          cursor: 'pointer' 
+                        }}
+                      >
+                        <Trash2 size={18} />
+                      </button>
+                    )}
+                    <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>{acc.icon}</div>
+                    <h3 style={{ color: text, margin: '0 0 0.5rem 0' }}>{acc.name}</h3>
+                    <p style={{ fontSize: '1.75rem', fontWeight: 'bold', margin: 0, color: acc.saldo >= 0 ? '#10b981' : '#ef4444' }}>
+                      ${(acc.saldo || 0).toLocaleString()}
+                    </p>
+                  </div>
+                ))}
               </div>
-            )}
+            </div>
+          )}
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1rem' }}>
-              {accounts.map(acc => (
-                <div key={acc.id} style={{ 
-                  padding: '1.5rem', 
-                  backgroundColor: darkMode ? '#2a2a2a' : '#f9f9f9', 
-                  borderRadius: '0.75rem', 
-                  border: `2px solid ${border}`,
-                  position: 'relative'
-                }}>
-                  {!['efectivo', 'banco', 'tarjeta'].includes(acc.id) && (
+          {/* DÉBITO */}
+          {grouped.debito.length > 0 && (
+            <div>
+              <h3 style={{ color: text, margin: '0 0 1rem 0', fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                📊 Débito (Dinero que tengo)
+              </h3>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1rem' }}>
+                {grouped.debito.map(acc => (
+                  <div key={acc.id} style={{ 
+                    padding: '1.5rem', 
+                    backgroundColor: darkMode ? '#2a2a2a' : '#f9f9f9', 
+                    borderRadius: '0.75rem', 
+                    border: `2px solid #10b981`,
+                    position: 'relative'
+                  }}>
                     <button 
                       onClick={() => deleteAccount(acc.id)} 
                       style={{ 
@@ -1166,18 +1322,67 @@ export default function FamControl() {
                     >
                       <Trash2 size={18} />
                     </button>
-                  )}
-                  <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>{acc.icon}</div>
-                  <h3 style={{ color: text, margin: '0 0 0.5rem 0' }}>{acc.name}</h3>
-                  {acc.tipo && <p style={{ fontSize: '0.75rem', color: textSec, margin: '0 0 0.5rem 0' }}>{acc.tipo}</p>}
-                  <p style={{ fontSize: '1.75rem', fontWeight: 'bold', margin: 0, color: acc.saldo >= 0 ? '#10b981' : '#ef4444' }}>
-                    ${(acc.saldo || 0).toLocaleString()}
-                  </p>
-                </div>
-              ))}
+                    <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>{acc.icon}</div>
+                    <h3 style={{ color: text, margin: '0 0 0.25rem 0' }}>{acc.name}</h3>
+                    <p style={{ fontSize: '0.75rem', color: textSec, margin: '0 0 0.5rem 0' }}>
+                      {Object.values(ACCOUNT_CATEGORIES.debito.types).find(t => t.id === acc.tipo)?.name}
+                    </p>
+                    <p style={{ fontSize: '1.75rem', fontWeight: 'bold', margin: 0, color: '#10b981' }}>
+                      +${(acc.saldo || 0).toLocaleString()}
+                    </p>
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
-        )}
+          )}
+
+          {/* CRÉDITO */}
+          {grouped.credito.length > 0 && (
+            <div>
+              <h3 style={{ color: text, margin: '0 0 1rem 0', fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                💳 Crédito (Deuda)
+              </h3>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1rem' }}>
+                {grouped.credito.map(acc => (
+                  <div key={acc.id} style={{ 
+                    padding: '1.5rem', 
+                    backgroundColor: darkMode ? '#2a2a2a' : '#f9f9f9', 
+                    borderRadius: '0.75rem', 
+                    border: `2px solid #ef4444`,
+                    position: 'relative'
+                  }}>
+                    <button 
+                      onClick={() => deleteAccount(acc.id)} 
+                      style={{ 
+                        position: 'absolute', 
+                        top: '0.75rem', 
+                        right: '0.75rem', 
+                        background: 'none', 
+                        border: 'none', 
+                        color: '#ef4444', 
+                        cursor: 'pointer' 
+                      }}
+                    >
+                      <Trash2 size={18} />
+                    </button>
+                    <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>{acc.icon}</div>
+                    <h3 style={{ color: text, margin: '0 0 0.25rem 0' }}>{acc.name}</h3>
+                    <p style={{ fontSize: '0.75rem', color: textSec, margin: '0 0 0.5rem 0' }}>
+                      {Object.values(ACCOUNT_CATEGORIES.credito.types).find(t => t.id === acc.tipo)?.name}
+                    </p>
+                    <p style={{ fontSize: '1.75rem', fontWeight: 'bold', margin: 0, color: '#ef4444' }}>
+                      ${(acc.saldo || 0).toLocaleString()}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    })()}
+  </div>
+)}
 
         {currentTab === 'transacciones' && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '1.5rem' }}>
