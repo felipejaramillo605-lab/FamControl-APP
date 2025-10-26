@@ -109,17 +109,16 @@ export default function FamControl() {
   });
 
   const [accountForm, setAccountForm] = useState({
-  name: '',
-  categoria: 'debito', // efectivo, debito, credito
-  tipo: '', // depende de la categoria
-  saldo: 0
-});
-const [showAddAccount, setShowAddAccount] = useState(false);
+    name: '',
+    categoria: 'debito',
+    tipo: '',
+    saldo: 0
+  });
+  const [showAddAccount, setShowAddAccount] = useState(false);
 
   useEffect(() => {
     const checkSession = async () => {
       try {
-        // Validar que estamos en el navegador
         if (typeof window === 'undefined') return;
         
         const { data: { session }, error } = await supabase.auth.getSession();
@@ -134,7 +133,6 @@ const [showAddAccount, setShowAddAccount] = useState(false);
           const userId = session.user.id;
           setUser(userEmail);
           
-          // Solo usar localStorage en navegador
           if (typeof window !== 'undefined') {
             localStorage.setItem('famcontrol_current_user', userEmail);
           }
@@ -150,7 +148,6 @@ const [showAddAccount, setShowAddAccount] = useState(false);
     checkSession();
   }, []);
 
-  // NUEVO: Cargar configuraciones al iniciar
   useEffect(() => {
     if (typeof window === 'undefined') return;
     
@@ -260,14 +257,13 @@ const [showAddAccount, setShowAddAccount] = useState(false);
       }
     
       if (accountsData && accountsData.length > 0) {
-  console.log('✅ Cuentas cargadas:', accountsData.length);
-  // Agregar categoria a cuentas antiguas que no la tengan
-  const updatedAccounts = accountsData.map(acc => ({
-    ...acc,
-    categoria: acc.categoria || 'debito' // Por defecto débito si no tiene
-  }));
-  setAccounts(updatedAccounts);
-} else {
+        console.log('✅ Cuentas cargadas:', accountsData.length);
+        const updatedAccounts = accountsData.map(acc => ({
+          ...acc,
+          categoria: acc.categoria || 'debito'
+        }));
+        setAccounts(updatedAccounts);
+      } else {
         console.log('🆕 Creando cuentas predeterminadas');
         const defaultAccs = DEFAULT_ACCOUNTS.map(acc => ({
           ...acc,
@@ -418,37 +414,29 @@ const [showAddAccount, setShowAddAccount] = useState(false);
         }
       }));
       
-      if (transactionForm.tipo === 'transferencia' && transactionForm.cuentaDestino) {
-        const updatedAccounts = await Promise.all(
-          accounts.map(async (acc) => {
-            if (acc.id === transactionForm.cuenta) {
-              const newSaldo = (acc.saldo || 0) - parseFloat(transactionForm.valor);
-              await supabase.from('accounts').update({ saldo: newSaldo }).eq('id', acc.id).eq('user_id', currentUser.id);
-              return { ...acc, saldo: newSaldo };
+      const updatedAccounts = await Promise.all(
+        accounts.map(async (acc) => {
+          if (acc.id === transactionForm.cuenta) {
+            let newSaldo = acc.saldo || 0;
+            if (transactionForm.tipo === 'transferencia' && transactionForm.cuentaDestino) {
+              newSaldo -= parseFloat(transactionForm.valor); // Decrease source account
+            } else if (transactionForm.tipo === 'ingreso') {
+              newSaldo += parseFloat(transactionForm.valor); // Increase for income
+            } else if (transactionForm.tipo === 'gasto') {
+              newSaldo -= parseFloat(transactionForm.valor); // Decrease for expense
             }
-            if (acc.id === transactionForm.cuentaDestino) {
-              const newSaldo = (acc.saldo || 0) + parseFloat(transactionForm.valor);
-              await supabase.from('accounts').update({ saldo: newSaldo }).eq('id', acc.id).eq('user_id', currentUser.id);
-              return { ...acc, saldo: newSaldo };
-            }
-            return acc;
-          })
-        );
-        setAccounts(updatedAccounts);
-      } else {
-        const updatedAccounts = await Promise.all(
-          accounts.map(async (acc) => {
-            if (acc.id === transactionForm.cuenta) {
-              const change = transactionForm.tipo === 'ingreso' ? parseFloat(transactionForm.valor) : -parseFloat(transactionForm.valor);
-              const newSaldo = (acc.saldo || 0) + change;
-              await supabase.from('accounts').update({ saldo: newSaldo }).eq('id', acc.id).eq('user_id', currentUser.id);
-              return { ...acc, saldo: newSaldo };
-            }
-            return acc;
-          })
-        );
-        setAccounts(updatedAccounts);
-      }
+            await supabase.from('accounts').update({ saldo: newSaldo }).eq('id', acc.id).eq('user_id', currentUser.id);
+            return { ...acc, saldo: newSaldo };
+          }
+          if (transactionForm.tipo === 'transferencia' && acc.id === transactionForm.cuentaDestino) {
+            const newSaldo = (acc.saldo || 0) + parseFloat(transactionForm.valor); // Increase destination account
+            await supabase.from('accounts').update({ saldo: newSaldo }).eq('id', acc.id).eq('user_id', currentUser.id);
+            return { ...acc, saldo: newSaldo };
+          }
+          return acc;
+        })
+      );
+      setAccounts(updatedAccounts);
       
       setTransactionForm({ 
         fecha: new Date().toISOString().split('T')[0], 
@@ -672,74 +660,71 @@ const [showAddAccount, setShowAddAccount] = useState(false);
 
   const getMonthlySavings = () => {
     const currentMonth = new Date().toISOString().slice(0, 7);
-    const monthTx = Object.values(transactions).filter(t => t.fecha.startsWith(currentMonth));
+    const monthTx = Object.values(transactions).filter(t => 
+      t.fecha.startsWith(currentMonth)
+    );
     
-    let ingresos = 0;
-    let gastos = 0;
+    let ingresos = monthTx
+      .filter(t => t.tipo === 'ingreso')
+      .reduce((sum, t) => sum + (parseFloat(t.valor) || 0), 0);
     
-    monthTx.forEach(t => {
-      const valor = parseFloat(t.valor) || 0;
-      if (t.tipo === 'ingreso') ingresos += valor;
-      else if (t.tipo === 'gasto') gastos += valor;
-    });
-    
+    let gastos = monthTx
+      .filter(t => t.tipo === 'gasto')
+      .reduce((sum, t) => sum + (parseFloat(t.valor) || 0), 0);
+  
     return ingresos - gastos;
   };
 
   const addAccount = async () => {
-  if (!accountForm.name || !accountForm.tipo) {
-    alert('Por favor completa todos los campos');
-    return;
-  }
-  
-  try {
-    const { data: { user: currentUser } } = await supabase.auth.getUser();
-    if (!currentUser) throw new Error('No hay usuario autenticado');
-    
-    const newId = `account_${Date.now()}`;
-    
-    // Determinar si es débito (positivo) o crédito (negativo)
-    let finalSaldo = parseFloat(accountForm.saldo) || 0;
-    if (accountForm.categoria === 'credito') {
-      // Las deudas se guardan como negativos
-      finalSaldo = -Math.abs(finalSaldo);
-    } else {
-      // Los débitos y efectivo como positivos
-      finalSaldo = Math.abs(finalSaldo);
+    if (!accountForm.name || !accountForm.tipo) {
+      alert('Por favor completa todos los campos');
+      return;
     }
+  
+    try {
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      if (!currentUser) throw new Error('No hay usuario autenticado');
     
-    // Obtener el icon según el tipo
-    const typeObj = Object.values(ACCOUNT_CATEGORIES)
-      .find(cat => cat.types && cat.types.some(t => t.id === accountForm.tipo));
-    const selectedType = typeObj?.types.find(t => t.id === accountForm.tipo);
+      const newId = `account_${Date.now()}`;
     
-    const newAccount = {
-      id: newId,
-      name: accountForm.name,
-      icon: selectedType?.icon || '💰',
-      tipo: accountForm.tipo,
-      categoria: accountForm.categoria,
-      saldo: finalSaldo,
-      user_id: currentUser.id,
-      created_at: new Date().toISOString()
-    };
+      let finalSaldo = parseFloat(accountForm.saldo) || 0;
+      if (accountForm.categoria === 'credito') {
+        finalSaldo = -Math.abs(finalSaldo);
+      } else {
+        finalSaldo = Math.abs(finalSaldo);
+      }
     
-    const { error } = await supabase
-      .from('accounts')
-      .upsert(newAccount);
+      const typeObj = Object.values(ACCOUNT_CATEGORIES)
+        .find(cat => cat.types && cat.types.some(t => t.id === accountForm.tipo));
+      const selectedType = typeObj?.types.find(t => t.id === accountForm.tipo);
     
-    if (error) throw error;
+      const newAccount = {
+        id: newId,
+        name: accountForm.name,
+        icon: selectedType?.icon || '💰',
+        tipo: accountForm.tipo,
+        categoria: accountForm.categoria,
+        saldo: finalSaldo,
+        user_id: currentUser.id,
+        created_at: new Date().toISOString()
+      };
     
-    setAccounts(prev => [...prev, newAccount]);
-    setAccountForm({ name: '', categoria: 'debito', tipo: '', saldo: 0 });
-    setShowAddAccount(false);
+      const { error } = await supabase
+        .from('accounts')
+        .upsert(newAccount);
     
-    console.log('✅ Cuenta guardada exitosamente');
-  } catch (error) {
-    console.error('Error guardando cuenta:', error);
-    alert('Error al guardar la cuenta: ' + error.message);
-  }
-};
+      if (error) throw error;
+    
+      setAccounts(prev => [...prev, newAccount]);
+      setAccountForm({ name: '', categoria: 'debito', tipo: '', saldo: 0 });
+      setShowAddAccount(false);
+    
+      console.log('✅ Cuenta guardada exitosamente');
+    } catch (error) {
+      console.error('Error guardando cuenta:', error);
+      alert('Error al guardar la cuenta: ' + error.message);
+    }
+  };
 
   const deleteAccount = async (accountId) => {
     const hasTransactions = Object.values(transactions).some(
@@ -852,28 +837,36 @@ const [showAddAccount, setShowAddAccount] = useState(false);
     }).filter(b => b);
   };
 
-const getAccountTypes = (categoria) => {
-  const catData = ACCOUNT_CATEGORIES[categoria];
-  if (!catData) return [];
-  if (categoria === 'efectivo') return [{ id: 'efectivo', name: 'Efectivo', icon: '💵' }];
-  return catData.types || [];
-};
-
-const groupAccountsByCategory = () => {
-  const grouped = {
-    efectivo: [],
-    debito: [],
-    credito: []
+  const getAccountTypes = (categoria) => {
+    const catData = ACCOUNT_CATEGORIES[categoria];
+    if (!catData) return [];
+    if (categoria === 'efectivo') return [{ id: 'efectivo', name: 'Efectivo', icon: '💵' }];
+    return catData.types || [];
   };
+
+  const groupAccountsByCategory = () => {
+    const grouped = {
+      efectivo: [],
+      debito: [],
+      credito: []
+    };
   
-  accounts.forEach(acc => {
-    if (acc.categoria === 'efectivo') grouped.efectivo.push(acc);
-    else if (acc.categoria === 'debito') grouped.debito.push(acc);
-    else if (acc.categoria === 'credito') grouped.credito.push(acc);
-  });
+    accounts.forEach(acc => {
+      if (acc.categoria === 'efectivo') grouped.efectivo.push(acc);
+      else if (acc.categoria === 'debito') grouped.debito.push(acc);
+      else if (acc.categoria === 'credito') grouped.credito.push(acc);
+    });
   
-  return grouped;
-};
+    return grouped;
+  };
+
+  const totalBalance = accounts.reduce((sum, acc) => {
+    let saldo = acc.saldo || 0;
+    if (acc.categoria === 'credito' && saldo > 0) {
+      saldo = -saldo;
+    }
+    return sum + saldo;
+  }, 0);
 
   const bg = darkMode ? '#0a0a0a' : '#f5f5f5';
   const card = darkMode ? '#1a1a1a' : '#ffffff';
@@ -909,7 +902,6 @@ const groupAccountsByCategory = () => {
   const { ingresos, gastos, gastosPorCategoria } = getFinancialSummary();
   const monthlyTrend = getMonthlyTrend();
   const budgetStatus = getBudgetStatus();
-  const totalBalance = accounts.reduce((sum, acc) => sum + (acc.saldo || 0), 0);
   const monthlySavings = getMonthlySavings();
 
   return (
@@ -1088,312 +1080,307 @@ const groupAccountsByCategory = () => {
               </div>
             )}
 
-            {/* NUEVO: Frase del Día */}
             <DailyQuote />
           </div>
         )}
 
         {currentTab === 'cuentas' && (
-  <div style={{ backgroundColor: card, border: `1px solid ${border}`, padding: '1.5rem', borderRadius: '1rem' }}>
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-      <h2 style={{ color: text, margin: 0 }}>Mis Cuentas</h2>
-      <button 
-        onClick={() => setShowAddAccount(!showAddAccount)} 
-        style={{ 
-          display: 'flex', 
-          alignItems: 'center', 
-          gap: '0.5rem', 
-          padding: '0.75rem 1rem', 
-          backgroundColor: '#10b981', 
-          color: 'white', 
-          border: 'none', 
-          borderRadius: '0.5rem', 
-          cursor: 'pointer', 
-          fontWeight: '600' 
-        }}
-      >
-        <Plus size={18} /> Nueva Cuenta
-      </button>
-    </div>
-
-    {showAddAccount && (
-      <div style={{ 
-        backgroundColor: darkMode ? '#2a2a2a' : '#f9f9f9', 
-        border: `1px solid ${border}`, 
-        padding: '1.5rem', 
-        borderRadius: '0.75rem', 
-        marginBottom: '1.5rem' 
-      }}>
-        <h3 style={{ color: text, margin: '0 0 1rem 0' }}>Agregar Nueva Cuenta</h3>
-        
-        <div style={{ marginBottom: '1rem' }}>
-          <label style={{ display: 'block', color: textSec, marginBottom: '0.5rem', fontSize: '0.875rem' }}>
-            Ingresa el nombre de la cuenta
-          </label>
-          <input 
-            type="text" 
-            placeholder="ej: Bancolombia Ahorros" 
-            value={accountForm.name} 
-            onChange={(e) => setAccountForm({ ...accountForm, name: e.target.value })} 
-            style={{ 
-              width: '100%', 
-              padding: '0.75rem', 
-              border: `1px solid ${border}`, 
-              borderRadius: '0.5rem', 
-              backgroundColor: input, 
-              color: text, 
-              boxSizing: 'border-box' 
-            }} 
-          />
-        </div>
-
-        <div style={{ marginBottom: '1rem' }}>
-          <label style={{ display: 'block', color: textSec, marginBottom: '0.5rem', fontSize: '0.875rem' }}>
-            Selecciona la categoría de la cuenta
-          </label>
-          <select 
-            value={accountForm.categoria} 
-            onChange={(e) => setAccountForm({ ...accountForm, categoria: e.target.value, tipo: '' })} 
-            style={{ 
-              width: '100%', 
-              padding: '0.75rem', 
-              border: `1px solid ${border}`, 
-              borderRadius: '0.5rem', 
-              backgroundColor: input, 
-              color: text, 
-              boxSizing: 'border-box' 
-            }}
-          >
-            <option value="efectivo">💵 Efectivo</option>
-            <option value="debito">📊 Débito (Dinero que tengo)</option>
-            <option value="credito">💳 Crédito (Deuda)</option>
-          </select>
-        </div>
-
-        <div style={{ marginBottom: '1rem' }}>
-          <label style={{ display: 'block', color: textSec, marginBottom: '0.5rem', fontSize: '0.875rem' }}>
-            Selecciona el tipo de cuenta
-          </label>
-          <select 
-            value={accountForm.tipo} 
-            onChange={(e) => setAccountForm({ ...accountForm, tipo: e.target.value })} 
-            style={{ 
-              width: '100%', 
-              padding: '0.75rem', 
-              border: `1px solid ${border}`, 
-              borderRadius: '0.5rem', 
-              backgroundColor: input, 
-              color: text, 
-              boxSizing: 'border-box' 
-            }}
-          >
-            <option value="">Selecciona un tipo</option>
-            {getAccountTypes(accountForm.categoria).map(type => (
-              <option key={type.id} value={type.id}>
-                {type.icon} {type.name}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div style={{ marginBottom: '1rem' }}>
-          <label style={{ display: 'block', color: textSec, marginBottom: '0.5rem', fontSize: '0.875rem' }}>
-            {accountForm.categoria === 'credito' ? 'Total adeudado' : 'Agrega saldo de la cuenta'}
-          </label>
-          <input 
-            type="number" 
-            placeholder="0" 
-            value={accountForm.saldo} 
-            onChange={(e) => setAccountForm({ ...accountForm, saldo: e.target.value })} 
-            style={{ 
-              width: '100%', 
-              padding: '0.75rem', 
-              border: `1px solid ${border}`, 
-              borderRadius: '0.5rem', 
-              backgroundColor: input, 
-              color: text, 
-              boxSizing: 'border-box' 
-            }} 
-          />
-          {accountForm.categoria === 'credito' && (
-            <p style={{ fontSize: '0.75rem', color: '#ef4444', margin: '0.5rem 0 0 0' }}>
-              ⚠️ Este monto se guardará como deuda (negativo)
-            </p>
-          )}
-        </div>
-
-        <div style={{ display: 'flex', gap: '1rem' }}>
-          <button 
-            onClick={addAccount} 
-            style={{ 
-              flex: 1, 
-              padding: '0.75rem', 
-              backgroundColor: '#10b981', 
-              color: 'white', 
-              border: 'none', 
-              borderRadius: '0.5rem', 
-              fontWeight: '600', 
-              cursor: 'pointer' 
-            }}
-          >
-            Guardar
-          </button>
-          <button 
-            onClick={() => setShowAddAccount(false)} 
-            style={{ 
-              flex: 1, 
-              padding: '0.75rem', 
-              backgroundColor: '#6b7280', 
-              color: 'white', 
-              border: 'none', 
-              borderRadius: '0.5rem', 
-              fontWeight: '600', 
-              cursor: 'pointer' 
-            }}
-          >
-            Cancelar
-          </button>
-        </div>
-      </div>
-    )}
-
-    {/* Mostrar cuentas por categoría */}
-    {(() => {
-      const grouped = groupAccountsByCategory();
-      return (
-        <div style={{ display: 'grid', gap: '2rem' }}>
-          {/* EFECTIVO */}
-          {grouped.efectivo.length > 0 && (
-            <div>
-              <h3 style={{ color: text, margin: '0 0 1rem 0', fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                💵 Efectivo
-              </h3>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1rem' }}>
-                {grouped.efectivo.map(acc => (
-                  <div key={acc.id} style={{ 
-                    padding: '1.5rem', 
-                    backgroundColor: darkMode ? '#2a2a2a' : '#f9f9f9', 
-                    borderRadius: '0.75rem', 
-                    border: `2px solid ${border}`,
-                    position: 'relative'
-                  }}>
-                    {!['efectivo_default'].includes(acc.id) && (
-                      <button 
-                        onClick={() => deleteAccount(acc.id)} 
-                        style={{ 
-                          position: 'absolute', 
-                          top: '0.75rem', 
-                          right: '0.75rem', 
-                          background: 'none', 
-                          border: 'none', 
-                          color: '#ef4444', 
-                          cursor: 'pointer' 
-                        }}
-                      >
-                        <Trash2 size={18} />
-                      </button>
-                    )}
-                    <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>{acc.icon}</div>
-                    <h3 style={{ color: text, margin: '0 0 0.5rem 0' }}>{acc.name}</h3>
-                    <p style={{ fontSize: '1.75rem', fontWeight: 'bold', margin: 0, color: acc.saldo >= 0 ? '#10b981' : '#ef4444' }}>
-                      ${(acc.saldo || 0).toLocaleString()}
-                    </p>
-                  </div>
-                ))}
-              </div>
+          <div style={{ backgroundColor: card, border: `1px solid ${border}`, padding: '1.5rem', borderRadius: '1rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+              <h2 style={{ color: text, margin: 0 }}>Mis Cuentas</h2>
+              <button 
+                onClick={() => setShowAddAccount(!showAddAccount)} 
+                style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '0.5rem', 
+                  padding: '0.75rem 1rem', 
+                  backgroundColor: '#10b981', 
+                  color: 'white', 
+                  border: 'none', 
+                  borderRadius: '0.5rem', 
+                  cursor: 'pointer', 
+                  fontWeight: '600' 
+                }}
+              >
+                <Plus size={18} /> Nueva Cuenta
+              </button>
             </div>
-          )}
 
-          {/* DÉBITO */}
-          {grouped.debito.length > 0 && (
-            <div>
-              <h3 style={{ color: text, margin: '0 0 1rem 0', fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                📊 Débito (Dinero que tengo)
-              </h3>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1rem' }}>
-                {grouped.debito.map(acc => (
-                  <div key={acc.id} style={{ 
-                    padding: '1.5rem', 
-                    backgroundColor: darkMode ? '#2a2a2a' : '#f9f9f9', 
-                    borderRadius: '0.75rem', 
-                    border: `2px solid #10b981`,
-                    position: 'relative'
-                  }}>
-                    <button 
-                      onClick={() => deleteAccount(acc.id)} 
-                      style={{ 
-                        position: 'absolute', 
-                        top: '0.75rem', 
-                        right: '0.75rem', 
-                        background: 'none', 
-                        border: 'none', 
-                        color: '#ef4444', 
-                        cursor: 'pointer' 
-                      }}
-                    >
-                      <Trash2 size={18} />
-                    </button>
-                    <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>{acc.icon}</div>
-                    <h3 style={{ color: text, margin: '0 0 0.25rem 0' }}>{acc.name}</h3>
-                    <p style={{ fontSize: '0.75rem', color: textSec, margin: '0 0 0.5rem 0' }}>
-                      {Object.values(ACCOUNT_CATEGORIES.debito.types).find(t => t.id === acc.tipo)?.name}
-                    </p>
-                    <p style={{ fontSize: '1.75rem', fontWeight: 'bold', margin: 0, color: '#10b981' }}>
-                      +${(acc.saldo || 0).toLocaleString()}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+            {showAddAccount && (
+              <div style={{ 
+                backgroundColor: darkMode ? '#2a2a2a' : '#f9f9f9', 
+                border: `1px solid ${border}`, 
+                padding: '1.5rem', 
+                borderRadius: '0.75rem', 
+                marginBottom: '1.5rem' 
+              }}>
+                <h3 style={{ color: text, margin: '0 0 1rem 0' }}>Agregar Nueva Cuenta</h3>
+                
+                <div style={{ marginBottom: '1rem' }}>
+                  <label style={{ display: 'block', color: textSec, marginBottom: '0.5rem', fontSize: '0.875rem' }}>
+                    Ingresa el nombre de la cuenta
+                  </label>
+                  <input 
+                    type="text" 
+                    placeholder="ej: Bancolombia Ahorros" 
+                    value={accountForm.name} 
+                    onChange={(e) => setAccountForm({ ...accountForm, name: e.target.value })} 
+                    style={{ 
+                      width: '100%', 
+                      padding: '0.75rem', 
+                      border: `1px solid ${border}`, 
+                      borderRadius: '0.5rem', 
+                      backgroundColor: input, 
+                      color: text, 
+                      boxSizing: 'border-box' 
+                    }} 
+                  />
+                </div>
 
-          {/* CRÉDITO */}
-          {grouped.credito.length > 0 && (
-            <div>
-              <h3 style={{ color: text, margin: '0 0 1rem 0', fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                💳 Crédito (Deuda)
-              </h3>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1rem' }}>
-                {grouped.credito.map(acc => (
-                  <div key={acc.id} style={{ 
-                    padding: '1.5rem', 
-                    backgroundColor: darkMode ? '#2a2a2a' : '#f9f9f9', 
-                    borderRadius: '0.75rem', 
-                    border: `2px solid #ef4444`,
-                    position: 'relative'
-                  }}>
-                    <button 
-                      onClick={() => deleteAccount(acc.id)} 
-                      style={{ 
-                        position: 'absolute', 
-                        top: '0.75rem', 
-                        right: '0.75rem', 
-                        background: 'none', 
-                        border: 'none', 
-                        color: '#ef4444', 
-                        cursor: 'pointer' 
-                      }}
-                    >
-                      <Trash2 size={18} />
-                    </button>
-                    <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>{acc.icon}</div>
-                    <h3 style={{ color: text, margin: '0 0 0.25rem 0' }}>{acc.name}</h3>
-                    <p style={{ fontSize: '0.75rem', color: textSec, margin: '0 0 0.5rem 0' }}>
-                      {Object.values(ACCOUNT_CATEGORIES.credito.types).find(t => t.id === acc.tipo)?.name}
+                <div style={{ marginBottom: '1rem' }}>
+                  <label style={{ display: 'block', color: textSec, marginBottom: '0.5rem', fontSize: '0.875rem' }}>
+                    Selecciona la categoría de la cuenta
+                  </label>
+                  <select 
+                    value={accountForm.categoria} 
+                    onChange={(e) => setAccountForm({ ...accountForm, categoria: e.target.value, tipo: '' })} 
+                    style={{ 
+                      width: '100%', 
+                      padding: '0.75rem', 
+                      border: `1px solid ${border}`, 
+                      borderRadius: '0.5rem', 
+                      backgroundColor: input, 
+                      color: text, 
+                      boxSizing: 'border-box' 
+                    }}
+                  >
+                    <option value="efectivo">💵 Efectivo</option>
+                    <option value="debito">📊 Débito (Dinero que tengo)</option>
+                    <option value="credito">💳 Crédito (Deuda)</option>
+                  </select>
+                </div>
+
+                <div style={{ marginBottom: '1rem' }}>
+                  <label style={{ display: 'block', color: textSec, marginBottom: '0.5rem', fontSize: '0.875rem' }}>
+                    Selecciona el tipo de cuenta
+                  </label>
+                  <select 
+                    value={accountForm.tipo} 
+                    onChange={(e) => setAccountForm({ ...accountForm, tipo: e.target.value })} 
+                    style={{ 
+                      width: '100%', 
+                      padding: '0.75rem', 
+                      border: `1px solid ${border}`, 
+                      borderRadius: '0.5rem', 
+                      backgroundColor: input, 
+                      color: text, 
+                      boxSizing: 'border-box' 
+                    }}
+                  >
+                    <option value="">Selecciona un tipo</option>
+                    {getAccountTypes(accountForm.categoria).map(type => (
+                      <option key={type.id} value={type.id}>
+                        {type.icon} {type.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div style={{ marginBottom: '1rem' }}>
+                  <label style={{ display: 'block', color: textSec, marginBottom: '0.5rem', fontSize: '0.875rem' }}>
+                    {accountForm.categoria === 'credito' ? 'Total adeudado' : 'Agrega saldo de la cuenta'}
+                  </label>
+                  <input 
+                    type="number" 
+                    placeholder="0" 
+                    value={accountForm.saldo} 
+                    onChange={(e) => setAccountForm({ ...accountForm, saldo: e.target.value })} 
+                    style={{ 
+                      width: '100%', 
+                      padding: '0.75rem', 
+                      border: `1px solid ${border}`, 
+                      borderRadius: '0.5rem', 
+                      backgroundColor: input, 
+                      color: text, 
+                      boxSizing: 'border-box' 
+                    }} 
+                  />
+                  {accountForm.categoria === 'credito' && (
+                    <p style={{ fontSize: '0.75rem', color: '#ef4444', margin: '0.5rem 0 0 0' }}>
+                      ⚠️ Este monto se guardará como deuda (negativo)
                     </p>
-                    <p style={{ fontSize: '1.75rem', fontWeight: 'bold', margin: 0, color: '#ef4444' }}>
-                      ${(acc.saldo || 0).toLocaleString()}
-                    </p>
-                  </div>
-                ))}
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', gap: '1rem' }}>
+                  <button 
+                    onClick={addAccount} 
+                    style={{ 
+                      flex: 1, 
+                      padding: '0.75rem', 
+                      backgroundColor: '#10b981', 
+                      color: 'white', 
+                      border: 'none', 
+                      borderRadius: '0.5rem', 
+                      fontWeight: '600', 
+                      cursor: 'pointer' 
+                    }}
+                  >
+                    Guardar
+                  </button>
+                  <button 
+                    onClick={() => setShowAddAccount(false)} 
+                    style={{ 
+                      flex: 1, 
+                      padding: '0.75rem', 
+                      backgroundColor: '#6b7280', 
+                      color: 'white', 
+                      border: 'none', 
+                      borderRadius: '0.5rem', 
+                      fontWeight: '600', 
+                      cursor: 'pointer' 
+                    }}
+                  >
+                    Cancelar
+                  </button>
+                </div>
               </div>
-            </div>
-          )}
-        </div>
-      );
-    })()}
-  </div>
-)}
+            )}
+
+            {(() => {
+              const grouped = groupAccountsByCategory();
+              return (
+                <div style={{ display: 'grid', gap: '2rem' }}>
+                  {grouped.efectivo.length > 0 && (
+                    <div>
+                      <h3 style={{ color: text, margin: '0 0 1rem 0', fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        💵 Efectivo
+                      </h3>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1rem' }}>
+                        {grouped.efectivo.map(acc => (
+                          <div key={acc.id} style={{ 
+                            padding: '1.5rem', 
+                            backgroundColor: darkMode ? '#2a2a2a' : '#f9f9f9', 
+                            borderRadius: '0.75rem', 
+                            border: `2px solid ${border}`,
+                            position: 'relative'
+                          }}>
+                            {!['efectivo_default'].includes(acc.id) && (
+                              <button 
+                                onClick={() => deleteAccount(acc.id)} 
+                                style={{ 
+                                  position: 'absolute', 
+                                  top: '0.75rem', 
+                                  right: '0.75rem', 
+                                  background: 'none', 
+                                  border: 'none', 
+                                  color: '#ef4444', 
+                                  cursor: 'pointer' 
+                                }}
+                              >
+                                <Trash2 size={18} />
+                              </button>
+                            )}
+                            <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>{acc.icon}</div>
+                            <h3 style={{ color: text, margin: '0 0 0.5rem 0' }}>{acc.name}</h3>
+                            <p style={{ fontSize: '1.75rem', fontWeight: 'bold', margin: 0, color: acc.saldo >= 0 ? '#10b981' : '#ef4444' }}>
+                              ${(acc.saldo || 0).toLocaleString()}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {grouped.debito.length > 0 && (
+                    <div>
+                      <h3 style={{ color: text, margin: '0 0 1rem 0', fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        📊 Débito (Dinero que tengo)
+                      </h3>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1rem' }}>
+                        {grouped.debito.map(acc => (
+                          <div key={acc.id} style={{ 
+                            padding: '1.5rem', 
+                            backgroundColor: darkMode ? '#2a2a2a' : '#f9f9f9', 
+                            borderRadius: '0.75rem', 
+                            border: `2px solid #10b981`,
+                            position: 'relative'
+                          }}>
+                            <button 
+                              onClick={() => deleteAccount(acc.id)} 
+                              style={{ 
+                                position: 'absolute', 
+                                top: '0.75rem', 
+                                right: '0.75rem', 
+                                background: 'none', 
+                                border: 'none', 
+                                color: '#ef4444', 
+                                cursor: 'pointer' 
+                              }}
+                            >
+                              <Trash2 size={18} />
+                            </button>
+                            <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>{acc.icon}</div>
+                            <h3 style={{ color: text, margin: '0 0 0.25rem 0' }}>{acc.name}</h3>
+                            <p style={{ fontSize: '0.75rem', color: textSec, margin: '0 0 0.5rem 0' }}>
+                              {Object.values(ACCOUNT_CATEGORIES.debito.types).find(t => t.id === acc.tipo)?.name}
+                            </p>
+                            <p style={{ fontSize: '1.75rem', fontWeight: 'bold', margin: 0, color: '#10b981' }}>
+                              +${(acc.saldo || 0).toLocaleString()}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {grouped.credito.length > 0 && (
+                    <div>
+                      <h3 style={{ color: text, margin: '0 0 1rem 0', fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        💳 Crédito (Deuda)
+                      </h3>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1rem' }}>
+                        {grouped.credito.map(acc => (
+                          <div key={acc.id} style={{ 
+                            padding: '1.5rem', 
+                            backgroundColor: darkMode ? '#2a2a2a' : '#f9f9f9', 
+                            borderRadius: '0.75rem', 
+                            border: `2px solid #ef4444`,
+                            position: 'relative'
+                          }}>
+                            <button 
+                              onClick={() => deleteAccount(acc.id)} 
+                              style={{ 
+                                position: 'absolute', 
+                                top: '0.75rem', 
+                                right: '0.75rem', 
+                                background: 'none', 
+                                border: 'none', 
+                                color: '#ef4444', 
+                                cursor: 'pointer' 
+                              }}
+                            >
+                              <Trash2 size={18} />
+                            </button>
+                            <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>{acc.icon}</div>
+                            <h3 style={{ color: text, margin: '0 0 0.25rem 0' }}>{acc.name}</h3>
+                            <p style={{ fontSize: '0.75rem', color: textSec, margin: '0 0 0.5rem 0' }}>
+                              {Object.values(ACCOUNT_CATEGORIES.credito.types).find(t => t.id === acc.tipo)?.name}
+                            </p>
+                            <p style={{ fontSize: '1.75rem', fontWeight: 'bold', margin: 0, color: '#ef4444' }}>
+                              ${(acc.saldo || 0).toLocaleString()}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
+        )}
 
         {currentTab === 'transacciones' && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '1.5rem' }}>
@@ -1457,86 +1444,64 @@ const groupAccountsByCategory = () => {
                           {t.tipo === 'ingreso' ? '+' : '-'}${parseFloat(t.valor).toLocaleString()}
                         </span>
                         <button onClick={async () => { 
-  try {
-    const { data: { user: currentUser } } = await supabase.auth.getUser();
-    if (!currentUser) throw new Error('No hay usuario autenticado');
-    
-    // 1. REVERTIR EL SALDO DE LA CUENTA
-    const account = accounts.find(a => a.id === t.cuenta);
-    if (account) {
-      // Calcular el cambio a revertir
-      let revertChange = 0;
-      
-      if (t.tipo === 'ingreso') {
-        revertChange = -parseFloat(t.valor); // Revertir ingreso
-      } else if (t.tipo === 'gasto') {
-        revertChange = parseFloat(t.valor); // Revertir gasto
-      } else if (t.tipo === 'transferencia' && t.cuentaDestino) {
-        // Para transferencias, revertir en ambas cuentas
-        revertChange = parseFloat(t.valor); // Volver a la cuenta origen
-        
-        const destinationAccount = accounts.find(a => a.id === t.cuentaDestino);
-        if (destinationAccount) {
-          const destinationRevert = -parseFloat(t.valor); // Quitar de la cuenta destino
-          const newDestinationSaldo = (destinationAccount.saldo || 0) + destinationRevert;
-          
-          // Actualizar cuenta destino en Supabase
-          const { error: updateDestError } = await supabase
-            .from('accounts')
-            .update({ saldo: newDestinationSaldo })
-            .eq('id', destinationAccount.id)
-            .eq('user_id', currentUser.id);
-          
-          if (updateDestError) throw updateDestError;
-          
-          // Actualizar cuenta destino en estado local
-          const updatedAccountsDest = accounts.map(acc => 
-            acc.id === t.cuentaDestino ? { ...acc, saldo: newDestinationSaldo } : acc
-          );
-          setAccounts(updatedAccountsDest);
-        }
-      }
-      
-      const newSaldo = (account.saldo || 0) + revertChange;
-      
-      // Actualizar saldo en Supabase
-      const { error: updateError } = await supabase
-        .from('accounts')
-        .update({ saldo: newSaldo })
-        .eq('id', account.id)
-        .eq('user_id', currentUser.id);
-      
-      if (updateError) throw updateError;
-      
-      // Actualizar en estado local
-      const updatedAccounts = accounts.map(acc => 
-        acc.id === t.cuenta ? { ...acc, saldo: newSaldo } : acc
-      );
-      setAccounts(updatedAccounts);
-    }
-    
-    // 2. ELIMINAR LA TRANSACCIÓN DE SUPABASE
-    const { error: deleteError } = await supabase
-      .from('transactions')
-      .delete()
-      .eq('id', t.id)
-      .eq('user_id', currentUser.id);
-    
-    if (deleteError) throw deleteError;
-    
-    // 3. ACTUALIZAR ESTADO LOCAL
-    const newTx = {...transactions}; 
-    delete newTx[t.id]; 
-    setTransactions(newTx);
-    
-    console.log('✅ Transacción eliminada y saldo revertido correctamente');
-  } catch (error) {
-    console.error('Error eliminando transacción:', error);
-    alert('Error al eliminar la transacción: ' + error.message);
-  }
-}} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer' }}>
-  <Trash2 size={16} />
-</button>
+                          try {
+                            const { data: { user: currentUser } } = await supabase.auth.getUser();
+                            if (!currentUser) throw new Error('No hay usuario autenticado');
+                            
+                            const account = accounts.find(a => a.id === t.cuenta);
+                            if (account) {
+                              let revertChange = 0;
+                              if (t.tipo === 'ingreso') {
+                                revertChange = -parseFloat(t.valor);
+                              } else if (t.tipo === 'gasto') {
+                                revertChange = parseFloat(t.valor);
+                              } else if (t.tipo === 'transferencia' && t.cuentaDestino) {
+                                revertChange = parseFloat(t.valor);
+                                const destinationAccount = accounts.find(a => a.id === t.cuentaDestino);
+                                if (destinationAccount) {
+                                  const destinationRevert = -parseFloat(t.valor);
+                                  const newDestinationSaldo = (destinationAccount.saldo || 0) + destinationRevert;
+                                  const { error: updateDestError } = await supabase
+                                    .from('accounts')
+                                    .update({ saldo: newDestinationSaldo })
+                                    .eq('id', destinationAccount.id)
+                                    .eq('user_id', currentUser.id);
+                                  if (updateDestError) throw updateDestError;
+                                  const updatedAccountsDest = accounts.map(acc => 
+                                    acc.id === t.cuentaDestino ? { ...acc, saldo: newDestinationSaldo } : acc
+                                  );
+                                  setAccounts(updatedAccountsDest);
+                                }
+                              }
+                              const newSaldo = (account.saldo || 0) + revertChange;
+                              const { error: updateError } = await supabase
+                                .from('accounts')
+                                .update({ saldo: newSaldo })
+                                .eq('id', account.id)
+                                .eq('user_id', currentUser.id);
+                              if (updateError) throw updateError;
+                              const updatedAccounts = accounts.map(acc => 
+                                acc.id === t.cuenta ? { ...acc, saldo: newSaldo } : acc
+                              );
+                              setAccounts(updatedAccounts);
+                            }
+                            const { error: deleteError } = await supabase
+                              .from('transactions')
+                              .delete()
+                              .eq('id', t.id)
+                              .eq('user_id', currentUser.id);
+                            if (deleteError) throw deleteError;
+                            const newTx = {...transactions}; 
+                            delete newTx[t.id]; 
+                            setTransactions(newTx);
+                            console.log('✅ Transacción eliminada y saldo revertido correctamente');
+                          } catch (error) {
+                            console.error('Error eliminando transacción:', error);
+                            alert('Error al eliminar la transacción: ' + error.message);
+                          }
+                        }} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer' }}>
+                          <Trash2 size={16} />
+                        </button>
                       </div>
                     </div>
                   );
@@ -1556,473 +1521,4 @@ const groupAccountsByCategory = () => {
                 </select>
                 <input type="month" value={budgetForm.mes} onChange={(e) => setBudgetForm({ ...budgetForm, mes: e.target.value })} style={{ width: '100%', padding: '0.75rem', border: `1px solid ${border}`, borderRadius: '0.5rem', backgroundColor: input, color: text, marginBottom: '1rem', boxSizing: 'border-box' }} />
                 <input type="number" placeholder="Monto presupuesto" value={budgetForm.monto} onChange={(e) => setBudgetForm({ ...budgetForm, monto: e.target.value })} style={{ width: '100%', padding: '0.75rem', border: `1px solid ${border}`, borderRadius: '0.5rem', backgroundColor: input, color: text, marginBottom: '1rem', boxSizing: 'border-box' }} />
-                <button onClick={addBudget} style={{ width: '100%', padding: '0.75rem', backgroundColor: '#7c3aed', color: 'white', border: 'none', borderRadius: '0.5rem', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
-                  <Plus size={18} />Crear Presupuesto
-                </button>
-              </div>
-
-              <div style={{ backgroundColor: card, border: `1px solid ${border}`, padding: '1.5rem', borderRadius: '1rem' }}>
-                <h2 style={{ color: text, margin: '0 0 1.5rem 0' }}>Estado de Presupuestos</h2>
-                {budgetStatus.length > 0 ? (
-                  <div style={{ display: 'grid', gap: '1rem' }}>
-                    {budgetStatus.map(b => (
-                      <div key={b.categoria} style={{ padding: '1.5rem', backgroundColor: darkMode ? '#2a2a2a' : '#f9f9f9', borderRadius: '0.75rem', border: b.alerta ? '2px solid #ef4444' : `1px solid ${border}` }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                          <span style={{ fontWeight: 'bold', color: text }}>{b.categoria}</span>
-                          <span style={{ fontSize: '0.875rem', color: b.alerta ? '#ef4444' : textSec }}>{b.porcentaje.toFixed(0)}%</span>
-                        </div>
-                        <div style={{ width: '100%', height: '8px', backgroundColor: border, borderRadius: '4px', overflow: 'hidden', marginBottom: '0.5rem' }}>
-                          <div style={{ width: `${b.porcentaje}%`, height: '100%', backgroundColor: b.alerta ? '#ef4444' : b.color, transition: 'width 0.3s' }}></div>
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.875rem', color: textSec }}>
-                          <span>Gastado: ${b.gastado.toLocaleString()}</span>
-                          <span>Presupuesto: ${b.presupuesto.toLocaleString()}</span>
-                        </div>
-                        {b.alerta && <div style={{ marginTop: '0.5rem', padding: '0.5rem', backgroundColor: '#fef2f2', color: '#ef4444', borderRadius: '0.25rem', fontSize: '0.75rem', fontWeight: '600' }}>⚠️ Alerta: Has superado el 80% del presupuesto</div>}
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p style={{ textAlign: 'center', color: textSec, paddingTop: '2rem' }}>No hay presupuestos configurados para este mes</p>
-                )}
-              </div>
-            </div>
-
-            <div style={{ backgroundColor: card, border: `1px solid ${border}`, padding: '1.5rem', borderRadius: '1rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                <h2 style={{ color: text, margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <Target size={20} /> Metas y Sueños
-                </h2>
-                <button 
-                  onClick={() => setShowAddGoal(!showAddGoal)} 
-                  style={{ 
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    gap: '0.5rem', 
-                    padding: '0.75rem 1rem', 
-                    backgroundColor: '#8b5cf6', 
-                    color: 'white', 
-                    border: 'none', 
-                    borderRadius: '0.5rem', 
-                    cursor: 'pointer', 
-                    fontWeight: '600' 
-                  }}
-                >
-                  <Plus size={18} /> Nueva Meta
-                </button>
-              </div>
-
-              {showAddGoal && (
-                <div style={{ 
-                  backgroundColor: darkMode ? '#2a2a2a' : '#f9f9f9', 
-                  border: `1px solid ${border}`, 
-                  padding: '1.5rem', 
-                  borderRadius: '0.75rem', 
-                  marginBottom: '1.5rem' 
-                }}>
-                  <h3 style={{ color: text, margin: '0 0 1rem 0' }}>Agregar Nueva Meta</h3>
-                  <input 
-                    type="text" 
-                    placeholder="Nombre de la meta (ej: Viaje a la playa)" 
-                    value={goalForm.name} 
-                    onChange={(e) => setGoalForm({ ...goalForm, name: e.target.value })} 
-                    style={{ 
-                      width: '100%', 
-                      padding: '0.75rem', 
-                      border: `1px solid ${border}`, 
-                      borderRadius: '0.5rem', 
-                      backgroundColor: input, 
-                      color: text, 
-                      marginBottom: '1rem', 
-                      boxSizing: 'border-box' 
-                    }} 
-                  />
-                  <select 
-                    value={goalForm.category} 
-                    onChange={(e) => setGoalForm({ ...goalForm, category: e.target.value })} 
-                    style={{ 
-                      width: '100%', 
-                      padding: '0.75rem', 
-                      border: `1px solid ${border}`, 
-                      borderRadius: '0.5rem', 
-                      backgroundColor: input, 
-                      color: text, 
-                      marginBottom: '1rem', 
-                      boxSizing: 'border-box' 
-                    }}
-                  >
-                    <option value="viaje">✈️ Viaje</option>
-                    <option value="casa">🏠 Casa</option>
-                    <option value="auto">🚗 Auto</option>
-                    <option value="educacion">🎓 Educación</option>
-                    <option value="salud">⚕️ Salud</option>
-                    <option value="tecnologia">💻 Tecnología</option>
-                    <option value="otros">🎯 Otros</option>
-                  </select>
-                  <input 
-                    type="number" 
-                    placeholder="Monto objetivo" 
-                    value={goalForm.targetAmount} 
-                    onChange={(e) => setGoalForm({ ...goalForm, targetAmount: e.target.value })} 
-                    style={{ 
-                      width: '100%', 
-                      padding: '0.75rem', 
-                      border: `1px solid ${border}`, 
-                      borderRadius: '0.5rem', 
-                      backgroundColor: input, 
-                      color: text, 
-                      marginBottom: '1rem', 
-                      boxSizing: 'border-box' 
-                    }} 
-                  />
-                  <input 
-                    type="number" 
-                    placeholder="Ahorro actual (opcional)" 
-                    value={goalForm.currentSaved} 
-                    onChange={(e) => setGoalForm({ ...goalForm, currentSaved: e.target.value })} 
-                    style={{ 
-                      width: '100%', 
-                      padding: '0.75rem', 
-                      border: `1px solid ${border}`, 
-                      borderRadius: '0.5rem', 
-                      backgroundColor: input, 
-                      color: text, 
-                      marginBottom: '1rem', 
-                      boxSizing: 'border-box' 
-                    }} 
-                  />
-                  <input 
-                    type="date" 
-                    placeholder="Fecha objetivo (opcional)" 
-                    value={goalForm.targetDate} 
-                    onChange={(e) => setGoalForm({ ...goalForm, targetDate: e.target.value })} 
-                    style={{ 
-                      width: '100%', 
-                      padding: '0.75rem', 
-                      border: `1px solid ${border}`, 
-                      borderRadius: '0.5rem', 
-                      backgroundColor: input, 
-                      color: text, 
-                      marginBottom: '1rem', 
-                      boxSizing: 'border-box' 
-                    }} 
-                  />
-                  <div style={{ display: 'flex', gap: '1rem' }}>
-                    <button 
-                      onClick={addGoal} 
-                      style={{ 
-                        flex: 1, 
-                        padding: '0.75rem', 
-                        backgroundColor: '#8b5cf6', 
-                        color: 'white', 
-                        border: 'none', 
-                        borderRadius: '0.5rem', 
-                        fontWeight: '600', 
-                        cursor: 'pointer' 
-                      }}
-                    >
-                      Guardar Meta
-                    </button>
-                    <button 
-                      onClick={() => setShowAddGoal(false)} 
-                      style={{ 
-                        flex: 1, 
-                        padding: '0.75rem', 
-                        backgroundColor: '#6b7280', 
-                        color: 'white', 
-                        border: 'none', 
-                        borderRadius: '0.5rem', 
-                        fontWeight: '600', 
-                        cursor: 'pointer' 
-                      }}
-                    >
-                      Cancelar
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              <div style={{ 
-                backgroundColor: darkMode ? '#2a2a2a' : '#f9f9f9', 
-                border: `1px solid ${border}`, 
-                padding: '1rem', 
-                borderRadius: '0.5rem', 
-                marginBottom: '1.5rem',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center'
-              }}>
-                <div>
-                  <div style={{ fontSize: '0.875rem', color: textSec }}>Ahorro mensual disponible</div>
-                  <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: monthlySavings >= 0 ? '#10b981' : '#ef4444' }}>
-                    ${monthlySavings.toLocaleString()}
-                  </div>
-                </div>
-                <div style={{ fontSize: '0.875rem', color: textSec, textAlign: 'right' }}>
-                  <div>Total en metas activas:</div>
-                  <div style={{ fontWeight: 'bold', color: text }}>
-                    ${Object.values(goals).reduce((sum, goal) => sum + (parseFloat(goal.target_amount) || 0), 0).toLocaleString()}
-                  </div>
-                </div>
-              </div>
-
-              {Object.values(goals).length > 0 ? (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))', gap: '1rem' }}>
-                  {Object.values(goals).map(goal => {
-                    const progress = getGoalProgress(goal);
-                    const monthsToGoal = progress.remaining > 0 && monthlySavings > 0 
-                      ? Math.ceil(progress.remaining / monthlySavings)
-                      : 0;
-                    
-                    return (
-                      <div key={goal.id} style={{ 
-                        padding: '1.5rem', 
-                        backgroundColor: darkMode ? '#2a2a2a' : '#f9f9f9', 
-                        borderRadius: '0.75rem', 
-                        border: `2px solid ${border}`,
-                        position: 'relative'
-                      }}>
-                        <button 
-                          onClick={() => deleteGoal(goal.id)} 
-                          style={{ 
-                            position: 'absolute', 
-                            top: '0.75rem', 
-                            right: '0.75rem', 
-                            background: 'none', 
-                            border: 'none', 
-                            color: '#ef4444', 
-                            cursor: 'pointer' 
-                          }}
-                        >
-                          <Trash2 size={18} />
-                        </button>
-                        
-                        <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>{getGoalIcon(goal.category)}</div>
-                        <h3 style={{ color: text, margin: '0 0 0.5rem 0' }}>{goal.name}</h3>
-                        
-                        <div style={{ width: '100%', height: '12px', backgroundColor: border, borderRadius: '6px', overflow: 'hidden', marginBottom: '0.5rem' }}>
-                          <div style={{ 
-                            width: `${progress.percentage}%`, 
-                            height: '100%', 
-                            backgroundColor: progress.percentage >= 100 ? '#10b981' : '#8b5cf6',
-                            transition: 'width 0.3s' 
-                          }}></div>
-                        </div>
-                        
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.875rem', color: textSec, marginBottom: '0.5rem' }}>
-                          <span>${progress.saved.toLocaleString()}</span>
-                          <span>${progress.target.toLocaleString()}</span>
-                        </div>
-                        
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                          <span style={{ fontWeight: 'bold', color: progress.percentage >= 100 ? '#10b981' : text }}>
-                            {progress.percentage.toFixed(0)}% completado
-                          </span>
-                          <span style={{ fontSize: '0.875rem', color: textSec }}>
-                            ${progress.remaining.toLocaleString()} restantes
-                          </span>
-                        </div>
-
-                        {monthlySavings > 0 && progress.remaining > 0 && (
-                          <div style={{ 
-                            padding: '0.5rem', 
-                            backgroundColor: darkMode ? '#1a1a1a' : '#f0f0f0', 
-                            borderRadius: '0.25rem', 
-                            fontSize: '0.75rem', 
-                            color: textSec,
-                            marginTop: '0.5rem'
-                          }}>
-                            📅 Con tu ahorro mensual, lograrás esta meta en aproximadamente <strong>{monthsToGoal} meses</strong>
-                          </div>
-                        )}
-
-                        {progress.percentage >= 100 && (
-                          <div style={{ 
-                            position: 'absolute', 
-                            top: '0.75rem', 
-                            left: '0.75rem', 
-                            background: '#10b981', 
-                            color: 'white', 
-                            padding: '0.25rem 0.5rem', 
-                            borderRadius: '0.25rem', 
-                            fontSize: '0.75rem', 
-                            fontWeight: '600' 
-                          }}>
-                            ¡Meta Alcanzada! 🎉
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div style={{ textAlign: 'center', padding: '3rem', color: textSec }}>
-                  <Target size={48} style={{ margin: '0 auto 1rem', opacity: 0.5 }} />
-                  <h3 style={{ color: textSec, margin: '0 0 0.5rem 0' }}>No hay metas configuradas</h3>
-                  <p style={{ margin: 0 }}>Crea tu primera meta para empezar a planificar tus sueños</p>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {currentTab === 'compras' && (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '1.5rem' }}>
-            <div style={{ backgroundColor: card, border: `1px solid ${border}`, padding: '1.5rem', borderRadius: '1rem', height: 'fit-content' }}>
-              <h2 style={{ color: text, margin: '0 0 1rem 0' }}>Agregar Item</h2>
-              <input type="text" placeholder="Nombre del item" value={shoppingForm.item} onChange={(e) => setShoppingForm({ ...shoppingForm, item: e.target.value })} style={{ width: '100%', padding: '0.75rem', border: `1px solid ${border}`, borderRadius: '0.5rem', backgroundColor: input, color: text, marginBottom: '1rem', boxSizing: 'border-box' }} />
-              <input type="number" placeholder="Cantidad" value={shoppingForm.cantidad} onChange={(e) => setShoppingForm({ ...shoppingForm, cantidad: e.target.value })} style={{ width: '100%', padding: '0.75rem', border: `1px solid ${border}`, borderRadius: '0.5rem', backgroundColor: input, color: text, marginBottom: '1rem', boxSizing: 'border-box' }} />
-              <select value={shoppingForm.categoria} onChange={(e) => setShoppingForm({ ...shoppingForm, categoria: e.target.value })} style={{ width: '100%', padding: '0.75rem', border: `1px solid ${border}`, borderRadius: '0.5rem', backgroundColor: input, color: text, marginBottom: '1rem', boxSizing: 'border-box' }}>
-                {categories.map(cat => <option key={cat.id} value={cat.id}>{cat.icon} {cat.name}</option>)}
-              </select>
-              <input type="number" placeholder="Precio estimado" value={shoppingForm.precio} onChange={(e) => setShoppingForm({ ...shoppingForm, precio: e.target.value })} style={{ width: '100%', padding: '0.75rem', border: `1px solid ${border}`, borderRadius: '0.5rem', backgroundColor: input, color: text, marginBottom: '1rem', boxSizing: 'border-box' }} />
-              <button onClick={addShoppingItem} style={{ width: '100%', padding: '0.75rem', backgroundColor: '#f59e0b', color: 'white', border: 'none', borderRadius: '0.5rem', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
-                <Plus size={18} />Agregar a Lista
-              </button>
-            </div>
-
-            <div style={{ backgroundColor: card, border: `1px solid ${border}`, padding: '1.5rem', borderRadius: '1rem' }}>
-              <h2 style={{ color: text, margin: '0 0 1rem 0' }}>Lista de Compras</h2>
-              {Object.values(shoppingList).length > 0 ? (
-                <div>
-                  <div style={{ marginBottom: '1rem', padding: '0.75rem', backgroundColor: darkMode ? '#2a2a2a' : '#f9f9f9', borderRadius: '0.5rem' }}>
-                    <div style={{ fontSize: '0.875rem', color: textSec }}>Total estimado: </div>
-                    <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#f59e0b' }}>
-                      ${Object.values(shoppingList).reduce((sum, item) => sum + (parseFloat(item.precio) || 0) * item.cantidad, 0).toLocaleString()}
-                    </div>
-                  </div>
-                  {Object.values(shoppingList).map(item => {
-                    const cat = categories.find(c => c.id === item.categoria);
-                    return (
-                      <div key={item.id} style={{ padding: '1rem', backgroundColor: item.comprado ? (darkMode ? '#1a3a1a' : '#f0fdf4') : (darkMode ? '#2a2a2a' : '#f9f9f9'), borderRadius: '0.5rem', marginBottom: '0.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', opacity: item.comprado ? 0.6 : 1 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                          <input type="checkbox" checked={item.comprado} onChange={() => toggleShoppingItem(item.id)} style={{ width: '20px', height: '20px', cursor: 'pointer' }} />
-                          <div>
-                            <div style={{ fontWeight: 'bold', color: text, textDecoration: item.comprado ? 'line-through' : 'none' }}>{item.item}</div>
-                            <div style={{ fontSize: '0.75rem', color: textSec }}>Cantidad: {item.cantidad} • {cat?.icon} {cat?.name} • ${parseFloat(item.precio || 0).toLocaleString()}</div>
-                          </div>
-                        </div>
-                        <button onClick={async () => { 
-                          try {
-                            await supabase.from('shopping_list').delete().eq('id', item.id);
-                            const newList = {...shoppingList}; 
-                            delete newList[item.id]; 
-                            setShoppingList(newList); 
-                          } catch (error) {
-                            console.error('Error eliminando item:', error);
-                            alert('Error al eliminar el item');
-                          }
-                        }} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer' }}>
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <p style={{ textAlign: 'center', color: textSec, paddingTop: '2rem' }}>No hay items en la lista</p>
-              )}
-            </div>
-          </div>
-        )}
-
-        {currentTab === 'eventos' && (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '1.5rem' }}>
-            <div style={{ backgroundColor: card, border: `1px solid ${border}`, padding: '1.5rem', borderRadius: '1rem', height: 'fit-content' }}>
-              <h2 style={{ color: text, margin: '0 0 1rem 0' }}>Nuevo Evento</h2>
-              <select value={eventForm.categoria} onChange={(e) => setEventForm({ ...eventForm, categoria: e.target.value })} style={{ width: '100%', padding: '0.75rem', border: `1px solid ${border}`, borderRadius: '0.5rem', backgroundColor: input, color: text, marginBottom: '1rem', boxSizing: 'border-box' }}>
-                <option value="Cita">Cita</option>
-                <option value="Reunión">Reunión</option>
-                <option value="Cumpleaños">Cumpleaños</option>
-              </select>
-              <input type="text" placeholder="Título" value={eventForm.titulo} onChange={(e) => setEventForm({ ...eventForm, titulo: e.target.value })} style={{ width: '100%', padding: '0.75rem', border: `1px solid ${border}`, borderRadius: '0.5rem', backgroundColor: input, color: text, marginBottom: '1rem', boxSizing: 'border-box' }} />
-              <input type="date" value={eventForm.fecha_inicio} onChange={(e) => setEventForm({ ...eventForm, fecha_inicio: e.target.value })} style={{ width: '100%', padding: '0.75rem', border: `1px solid ${border}`, borderRadius: '0.5rem', backgroundColor: input, color: text, marginBottom: '1rem', boxSizing: 'border-box' }} />
-              <input type="text" placeholder="Ubicación" value={eventForm.ubicacion} onChange={(e) => setEventForm({ ...eventForm, ubicacion: e.target.value })} style={{ width: '100%', padding: '0.75rem', border: `1px solid ${border}`, borderRadius: '0.5rem', backgroundColor: input, color: text, marginBottom: '1rem', boxSizing: 'border-box' }} />
-              <button onClick={addEvent} style={{ width: '100%', padding: '0.75rem', backgroundColor: '#7c3aed', color: 'white', border: 'none', borderRadius: '0.5rem', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
-                <Plus size={18} />Agregar Evento
-              </button>
-            </div>
-
-            <div style={{ backgroundColor: card, border: `1px solid ${border}`, padding: '1.5rem', borderRadius: '1rem' }}>
-              <h2 style={{ color: text, margin: '0 0 1rem 0' }}>Eventos</h2>
-              <div style={{ display: 'grid', gap: '1rem' }}>
-                {Object.values(events).map(e => (
-                  <div key={e.id} style={{ backgroundColor: darkMode ? '#2a2a2a' : '#f9f9f9', border: `1px solid ${border}`, borderRadius: '0.5rem', padding: '1rem', display: 'flex', justifyContent: 'space-between' }}>
-                    <div>
-                      <h3 style={{ color: text, margin: '0 0 0.5rem 0' }}>{e.titulo}</h3>
-                      <p style={{ color: textSec, margin: '0.25rem 0', fontSize: '0.875rem' }}>{e.categoria}</p>
-                      <p style={{ color: textSec, margin: '0.5rem 0 0 0', fontSize: '0.875rem' }}>📅 {e.fecha_inicio}</p>
-                      {e.ubicacion && <p style={{ color: textSec, margin: '0.25rem 0', fontSize: '0.875rem' }}>📍 {e.ubicacion}</p>}
-                    </div>
-                    <div style={{ display: 'flex', gap: '0.5rem' }}>
-                      <button onClick={async () => { 
-                        try {
-                          await supabase.from('events').delete().eq('id', e.id);
-                          const newEvents = {...events}; 
-                          delete newEvents[e.id]; 
-                          setEvents(newEvents); 
-                        } catch (error) {
-                          console.error('Error eliminando evento:', error);
-                          alert('Error al eliminar el evento');
-                        }
-                      }} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer' }}>
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {currentTab === 'resumen' && (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
-            <div style={{ backgroundColor: card, border: `1px solid ${border}`, padding: '1.5rem', borderRadius: '1rem' }}>
-              <h2 style={{ color: text, margin: '0 0 1rem 0' }}>Resumen Financiero</h2>
-              <div style={{ display: 'grid', gap: '0.75rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: `1px solid ${border}`, paddingBottom: '0.5rem' }}>
-                  <span style={{ color: textSec }}>Ingresos:</span>
-                  <span style={{ fontWeight: 'bold', color: '#10b981' }}>${ingresos.toLocaleString()}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: `1px solid ${border}`, paddingBottom: '0.5rem' }}>
-                  <span style={{ color: textSec }}>Gastos:</span>
-                  <span style={{ fontWeight: 'bold', color: '#ef4444' }}>${gastos.toLocaleString()}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', backgroundColor: darkMode ? '#2a2a2a' : '#f9f9f9', padding: '0.75rem', borderRadius: '0.5rem' }}>
-                  <span style={{ fontWeight: 'bold', color: text }}>Balance:</span>
-                  <span style={{ fontWeight: 'bold', color: ingresos - gastos >= 0 ? '#10b981' : '#ef4444' }}>${(ingresos - gastos).toLocaleString()}</span>
-                </div>
-              </div>
-            </div>
-
-            <div style={{ backgroundColor: card, border: `1px solid ${border}`, padding: '1.5rem', borderRadius: '1rem' }}>
-              <h2 style={{ color: text, margin: '0 0 1rem 0' }}>Gastos por Categoría</h2>
-              {Object.keys(gastosPorCategoria).length > 0 ? (
-                <ResponsiveContainer width="100%" height={300}>
-                  <PieChart>
-                    <Pie data={Object.entries(gastosPorCategoria).map(([name, value]) => ({ name, value }))} cx="50%" cy="50%" outerRadius={80} fill="#8884d8" dataKey="value" label>
-                      {Object.entries(gastosPorCategoria).map((_, i) => {
-                        const colors = ['#10b981', '#3b82f6', '#ef4444', '#8b5cf6', '#f59e0b', '#06b6d4', '#6b7280'];
-                        return <Cell key={`cell-${i}`} fill={colors[i % colors.length]} />;
-                      })}
-                    </Pie>
-                    <Tooltip />
-                  </PieChart>
-                </ResponsiveContainer>
-              ) : (
-                <p style={{ textAlign: 'center', color: textSec, paddingTop: '2rem' }}>Sin datos para mostrar</p>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* NUEVO: Modal de Configuración */}
-      <SettingsModal 
-        isOpen={showSettingsModal} 
-        onClose={() => setShowSettingsModal(false)} 
-      />
-    </div>
-  );
-}
+                <button onClick={addBudget} style={{ width: '100%', padding: '0.75rem', backgroundColor: '#7c3aed', color: 'white', border: 'none', borderRadius: '0.5rem',
