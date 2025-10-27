@@ -1,5 +1,5 @@
 // components/SettingsModal.js
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useSettingsStore } from '../stores/settings';
 import { X, Save, RefreshCw, Lock, Eye, EyeOff } from 'lucide-react';
 
@@ -36,11 +36,11 @@ const SettingsModal = ({ isOpen, onClose }) => {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
   const [activeTab, setActiveTab] = useState('general');
-  const [isInitialized, setIsInitialized] = useState(false);
+  const hasInitialized = useRef(false);
 
-  // Cargar settings actuales cuando el modal se abre
+  // Cargar settings actuales UNA SOLA VEZ cuando el modal se abre
   useEffect(() => {
-    if (isOpen && settings && !isInitialized) {
+    if (isOpen && settings && !hasInitialized.current) {
       setFormData({
         app_name: settings.app_name || 'FamControl v2',
         currency: settings.currency || 'COP',
@@ -49,15 +49,17 @@ const SettingsModal = ({ isOpen, onClose }) => {
         color_secondary: settings.color_secondary || '#424242',
         color_accent: settings.color_accent || '#82B1FF'
       });
-      setIsInitialized(true);
+      hasInitialized.current = true;
     }
-    
-    // Resetear cuando se cierra el modal
+  }, [isOpen]);
+
+  // Resetear cuando se cierra el modal
+  useEffect(() => {
     if (!isOpen) {
-      setIsInitialized(false);
+      hasInitialized.current = false;
       setMessage({ type: '', text: '' });
     }
-  }, [isOpen, settings]);
+  }, [isOpen]);
 
   const handleSaveSettings = async () => {
     setLoading(true);
@@ -130,7 +132,7 @@ const SettingsModal = ({ isOpen, onClose }) => {
           setMessage({ type: 'success', text: 'Configuración restaurada exitosamente' });
           setTimeout(() => {
             setMessage({ type: '', text: '' });
-            setIsInitialized(false); // Forzar recarga de settings
+            hasInitialized.current = false;
             onClose();
           }, 2000);
         } else {
@@ -562,3 +564,55 @@ const SettingsModal = ({ isOpen, onClose }) => {
                 gap: '0.5rem',
                 opacity: loading ? 0.6 : 1
               }}
+            >
+              <Lock size={18} />
+              {loading ? 'Cambiando...' : 'Cambiar Contraseña'}
+            </button>
+          </div>
+        )}
+
+        {/* Advanced Tab */}
+        {activeTab === 'advanced' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+            <div style={{
+              padding: '1.5rem',
+              backgroundColor: '#fff3cd',
+              border: '1px solid #ffeaa7',
+              borderRadius: '0.5rem'
+            }}>
+              <h4 style={{ margin: '0 0 0.5rem 0', color: '#856404' }}>⚠️ Advertencia</h4>
+              <p style={{ margin: 0, color: '#856404', fontSize: '0.9rem' }}>
+                Esta acción restaurará todas las configuraciones a sus valores por defecto. 
+                Esta operación no se puede deshacer.
+              </p>
+            </div>
+
+            <button
+              onClick={handleResetSettings}
+              disabled={loading}
+              style={{
+                padding: '0.75rem 1.5rem',
+                backgroundColor: '#6c757d',
+                color: 'white',
+                border: 'none',
+                borderRadius: '0.5rem',
+                cursor: loading ? 'not-allowed' : 'pointer',
+                fontWeight: '600',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '0.5rem',
+                opacity: loading ? 0.6 : 1
+              }}
+            >
+              <RefreshCw size={18} />
+              {loading ? 'Restaurando...' : 'Restaurar Configuración por Defecto'}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default SettingsModal;
