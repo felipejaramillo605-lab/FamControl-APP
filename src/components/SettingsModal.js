@@ -36,10 +36,11 @@ const SettingsModal = ({ isOpen, onClose }) => {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
   const [activeTab, setActiveTab] = useState('general');
+  const [isInitialized, setIsInitialized] = useState(false);
 
   // Cargar settings actuales cuando el modal se abre
   useEffect(() => {
-    if (isOpen && settings) {
+    if (isOpen && settings && !isInitialized) {
       setFormData({
         app_name: settings.app_name || 'FamControl v2',
         currency: settings.currency || 'COP',
@@ -48,6 +49,13 @@ const SettingsModal = ({ isOpen, onClose }) => {
         color_secondary: settings.color_secondary || '#424242',
         color_accent: settings.color_accent || '#82B1FF'
       });
+      setIsInitialized(true);
+    }
+    
+    // Resetear cuando se cierra el modal
+    if (!isOpen) {
+      setIsInitialized(false);
+      setMessage({ type: '', text: '' });
     }
   }, [isOpen, settings]);
 
@@ -122,6 +130,7 @@ const SettingsModal = ({ isOpen, onClose }) => {
           setMessage({ type: 'success', text: 'Configuración restaurada exitosamente' });
           setTimeout(() => {
             setMessage({ type: '', text: '' });
+            setIsInitialized(false); // Forzar recarga de settings
             onClose();
           }, 2000);
         } else {
@@ -277,7 +286,8 @@ const SettingsModal = ({ isOpen, onClose }) => {
                   padding: '0.75rem',
                   border: '1px solid #d1d5db',
                   borderRadius: '0.5rem',
-                  fontSize: '1rem'
+                  fontSize: '1rem',
+                  boxSizing: 'border-box'
                 }}
                 placeholder="Ingresa el nombre de la aplicación"
               />
@@ -295,7 +305,8 @@ const SettingsModal = ({ isOpen, onClose }) => {
                   padding: '0.75rem',
                   border: '1px solid #d1d5db',
                   borderRadius: '0.5rem',
-                  fontSize: '1rem'
+                  fontSize: '1rem',
+                  boxSizing: 'border-box'
                 }}
               >
                 <option value="COP">Peso Colombiano (COP)</option>
@@ -311,7 +322,7 @@ const SettingsModal = ({ isOpen, onClose }) => {
               </label>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem' }}>
                 <div>
-                  <label style={{ fontSize: '0.875rem', color: '#666', marginBottom: '0.25rem' }}>
+                  <label style={{ fontSize: '0.875rem', color: '#666', marginBottom: '0.25rem', display: 'block' }}>
                     Color Primario
                   </label>
                   <input
@@ -328,7 +339,7 @@ const SettingsModal = ({ isOpen, onClose }) => {
                   />
                 </div>
                 <div>
-                  <label style={{ fontSize: '0.875rem', color: '#666', marginBottom: '0.25rem' }}>
+                  <label style={{ fontSize: '0.875rem', color: '#666', marginBottom: '0.25rem', display: 'block' }}>
                     Color Secundario
                   </label>
                   <input
@@ -345,7 +356,7 @@ const SettingsModal = ({ isOpen, onClose }) => {
                   />
                 </div>
                 <div>
-                  <label style={{ fontSize: '0.875rem', color: '#666', marginBottom: '0.25rem' }}>
+                  <label style={{ fontSize: '0.875rem', color: '#666', marginBottom: '0.25rem', display: 'block' }}>
                     Color de Acento
                   </label>
                   <input
@@ -435,7 +446,8 @@ const SettingsModal = ({ isOpen, onClose }) => {
                     paddingRight: '3rem',
                     border: '1px solid #d1d5db',
                     borderRadius: '0.5rem',
-                    fontSize: '1rem'
+                    fontSize: '1rem',
+                    boxSizing: 'border-box'
                   }}
                   placeholder="Ingresa tu contraseña actual"
                 />
@@ -472,7 +484,8 @@ const SettingsModal = ({ isOpen, onClose }) => {
                     paddingRight: '3rem',
                     border: '1px solid #d1d5db',
                     borderRadius: '0.5rem',
-                    fontSize: '1rem'
+                    fontSize: '1rem',
+                    boxSizing: 'border-box'
                   }}
                   placeholder="Ingresa tu nueva contraseña"
                 />
@@ -509,7 +522,8 @@ const SettingsModal = ({ isOpen, onClose }) => {
                     paddingRight: '3rem',
                     border: '1px solid #d1d5db',
                     borderRadius: '0.5rem',
-                    fontSize: '1rem'
+                    fontSize: '1rem',
+                    boxSizing: 'border-box'
                   }}
                   placeholder="Confirma tu nueva contraseña"
                 />
@@ -548,55 +562,3 @@ const SettingsModal = ({ isOpen, onClose }) => {
                 gap: '0.5rem',
                 opacity: loading ? 0.6 : 1
               }}
-            >
-              <Lock size={18} />
-              {loading ? 'Cambiando...' : 'Cambiar Contraseña'}
-            </button>
-          </div>
-        )}
-
-        {/* Advanced Tab */}
-        {activeTab === 'advanced' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-            <div style={{
-              padding: '1.5rem',
-              backgroundColor: '#fff3cd',
-              border: '1px solid #ffeaa7',
-              borderRadius: '0.5rem'
-            }}>
-              <h4 style={{ margin: '0 0 0.5rem 0', color: '#856404' }}>⚠️ Advertencia</h4>
-              <p style={{ margin: 0, color: '#856404', fontSize: '0.9rem' }}>
-                Esta acción restaurará todas las configuraciones a sus valores por defecto. 
-                Esta operación no se puede deshacer.
-              </p>
-            </div>
-
-            <button
-              onClick={handleResetSettings}
-              disabled={loading}
-              style={{
-                padding: '0.75rem 1.5rem',
-                backgroundColor: '#6c757d',
-                color: 'white',
-                border: 'none',
-                borderRadius: '0.5rem',
-                cursor: loading ? 'not-allowed' : 'pointer',
-                fontWeight: '600',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '0.5rem',
-                opacity: loading ? 0.6 : 1
-              }}
-            >
-              <RefreshCw size={18} />
-              {loading ? 'Restaurando...' : 'Restaurar Configuración por Defecto'}
-            </button>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-};
-
-export default SettingsModal;
