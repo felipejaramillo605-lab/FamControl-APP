@@ -1,16 +1,24 @@
+// components/SettingsModal.js
 import React, { useState, useEffect } from 'react';
 import { useSettingsStore } from '../stores/settings';
+import { X, Save, RefreshCw, Lock, Eye, EyeOff } from 'lucide-react';
 
 const SettingsModal = ({ isOpen, onClose }) => {
-  const settingsStore = useSettingsStore();
-  const { settings, updateSettings, changePassword } = settingsStore;
+  const { 
+    settings, 
+    updateSettings, 
+    changePassword, 
+    resetSettings,
+    formatCurrency 
+  } = useSettingsStore();
   
   const [formData, setFormData] = useState({
-    app_name: 'FamControl v2',
+    app_name: '',
     currency: 'COP',
-    use_thousands_separator: true,
-    primary_color: '#2563eb',
-    secondary_color: '#10b981'
+    thousands_separator: true,
+    color_primary: '#1976d2',
+    color_secondary: '#424242',
+    color_accent: '#82B1FF'
   });
   
   const [passwordData, setPasswordData] = useState({
@@ -18,100 +26,120 @@ const SettingsModal = ({ isOpen, onClose }) => {
     newPassword: '',
     confirmPassword: ''
   });
-
+  
+  const [showPasswords, setShowPasswords] = useState({
+    current: false,
+    new: false,
+    confirm: false
+  });
+  
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
+  const [activeTab, setActiveTab] = useState('general');
 
-  // Actualizar formData cuando las settings cambien
+  // Cargar settings actuales cuando el modal se abre
   useEffect(() => {
     if (isOpen && settings) {
       setFormData({
         app_name: settings.app_name || 'FamControl v2',
         currency: settings.currency || 'COP',
-        use_thousands_separator: settings.use_thousands_separator ?? true,
-        primary_color: settings.primary_color || '#2563eb',
-        secondary_color: settings.secondary_color || '#10b981'
+        thousands_separator: settings.thousands_separator !== false,
+        color_primary: settings.color_primary || '#1976d2',
+        color_secondary: settings.color_secondary || '#424242',
+        color_accent: settings.color_accent || '#82B1FF'
       });
     }
   }, [isOpen, settings]);
 
-  const showMessage = (type, text) => {
-    setMessage({ type, text });
-    setTimeout(() => setMessage({ type: '', text: '' }), 3000);
-  };
-
-  const handleSave = async () => {
+  const handleSaveSettings = async () => {
+    setLoading(true);
+    setMessage({ type: '', text: '' });
+    
     try {
-      setLoading(true);
-      
-      // Validar que el nombre no esté vacío
-      if (!formData.app_name.trim()) {
-        showMessage('error', 'El nombre de la aplicación no puede estar vacío');
-        return;
-      }
-
       const success = await updateSettings(formData);
       
       if (success) {
-        showMessage('success', 'Configuración guardada correctamente');
+        setMessage({ type: 'success', text: 'Configuración guardada exitosamente' });
         setTimeout(() => {
-          onClose();
-        }, 1000);
+          setMessage({ type: '', text: '' });
+        }, 3000);
       } else {
-        showMessage('error', 'Error al guardar la configuración');
+        setMessage({ type: 'error', text: 'Error al guardar la configuración' });
       }
     } catch (error) {
-      console.error('Error saving settings:', error);
-      showMessage('error', 'Error al guardar la configuración');
+      setMessage({ type: 'error', text: 'Error inesperado: ' + error.message });
     } finally {
       setLoading(false);
     }
   };
 
-  const handlePasswordChange = async () => {
+  const handleChangePassword = async () => {
+    if (passwordData.newPassword !== passwordData.confirmPassword) {
+      setMessage({ type: 'error', text: 'Las contraseñas nuevas no coinciden' });
+      return;
+    }
+    
+    if (passwordData.newPassword.length < 6) {
+      setMessage({ type: 'error', text: 'La contraseña debe tener al menos 6 caracteres' });
+      return;
+    }
+    
+    setLoading(true);
+    setMessage({ type: '', text: '' });
+    
     try {
-      // Validaciones
-      if (!passwordData.currentPassword) {
-        showMessage('error', 'Ingresa tu contraseña actual');
-        return;
-      }
-
-      if (!passwordData.newPassword) {
-        showMessage('error', 'Ingresa una nueva contraseña');
-        return;
-      }
-
-      if (passwordData.newPassword.length < 6) {
-        showMessage('error', 'La contraseña debe tener al menos 6 caracteres');
-        return;
-      }
-
-      if (passwordData.newPassword !== passwordData.confirmPassword) {
-        showMessage('error', 'Las contraseñas no coinciden');
-        return;
-      }
-
-      if (passwordData.currentPassword === passwordData.newPassword) {
-        showMessage('error', 'La nueva contraseña debe ser diferente a la actual');
-        return;
-      }
-
-      setLoading(true);
-      
       const result = await changePassword(passwordData.currentPassword, passwordData.newPassword);
       
       if (result.success) {
-        showMessage('success', 'Contraseña cambiada correctamente');
-        setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
+        setMessage({ type: 'success', text: 'Contraseña cambiada exitosamente' });
+        setPasswordData({
+          currentPassword: '',
+          newPassword: '',
+          confirmPassword: ''
+        });
+        setTimeout(() => {
+          setMessage({ type: '', text: '' });
+        }, 3000);
       } else {
-        showMessage('error', result.error || 'Error al cambiar la contraseña');
+        setMessage({ type: 'error', text: result.error || 'Error al cambiar la contraseña' });
       }
     } catch (error) {
-      console.error('Error changing password:', error);
-      showMessage('error', 'Error al cambiar la contraseña');
+      setMessage({ type: 'error', text: 'Error inesperado: ' + error.message });
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleResetSettings = async () => {
+    if (window.confirm('¿Estás seguro de que quieres restaurar la configuración por defecto? Esta acción no se puede deshacer.')) {
+      setLoading(true);
+      setMessage({ type: '', text: '' });
+      
+      try {
+        const success = await resetSettings();
+        
+        if (success) {
+          setMessage({ type: 'success', text: 'Configuración restaurada exitosamente' });
+          setTimeout(() => {
+            setMessage({ type: '', text: '' });
+            onClose();
+          }, 2000);
+        } else {
+          setMessage({ type: 'error', text: 'Error al restaurar la configuración' });
+        }
+      } catch (error) {
+        setMessage({ type: 'error', text: 'Error inesperado: ' + error.message });
+      } finally {
+        setLoading(false);
+      }
+    }
+  };
+
+  const togglePasswordVisibility = (field) => {
+    setShowPasswords(prev => ({
+      ...prev,
+      [field]: !prev[field]
+    }));
   };
 
   if (!isOpen) return null;
@@ -123,280 +151,449 @@ const SettingsModal = ({ isOpen, onClose }) => {
       left: 0,
       right: 0,
       bottom: 0,
-      backgroundColor: 'rgba(0,0,0,0.5)',
+      backgroundColor: 'rgba(0, 0, 0, 0.5)',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      zIndex: 1000
+      zIndex: 1000,
+      padding: '1rem'
     }}>
       <div style={{
-        backgroundColor: '#1a1a1a',
-        border: '1px solid #333',
+        backgroundColor: 'white',
         borderRadius: '1rem',
         padding: '2rem',
-        width: '90%',
-        maxWidth: '500px',
+        width: '100%',
+        maxWidth: '600px',
         maxHeight: '90vh',
-        overflowY: 'auto'
+        overflowY: 'auto',
+        position: 'relative'
       }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-          <h2 style={{ color: 'white', margin: 0 }}>Configuración</h2>
+        {/* Header */}
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: '2rem'
+        }}>
+          <h2 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 'bold' }}>
+            Configuración
+          </h2>
           <button
             onClick={onClose}
             style={{
               background: 'none',
               border: 'none',
-              color: '#999',
-              fontSize: '1.5rem',
-              cursor: 'pointer'
+              cursor: 'pointer',
+              padding: '0.5rem',
+              borderRadius: '0.5rem',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
             }}
           >
-            ✕
+            <X size={24} />
           </button>
         </div>
 
-        {/* Mensaje de estado */}
+        {/* Tabs */}
+        <div style={{
+          display: 'flex',
+          gap: '1rem',
+          marginBottom: '2rem',
+          borderBottom: '1px solid #e5e5e5',
+          paddingBottom: '1rem'
+        }}>
+          <button
+            onClick={() => setActiveTab('general')}
+            style={{
+              padding: '0.75rem 1.5rem',
+              border: 'none',
+              background: activeTab === 'general' ? '#1976d2' : 'transparent',
+              color: activeTab === 'general' ? 'white' : '#666',
+              borderRadius: '0.5rem',
+              cursor: 'pointer',
+              fontWeight: '600'
+            }}
+          >
+            General
+          </button>
+          <button
+            onClick={() => setActiveTab('security')}
+            style={{
+              padding: '0.75rem 1.5rem',
+              border: 'none',
+              background: activeTab === 'security' ? '#1976d2' : 'transparent',
+              color: activeTab === 'security' ? 'white' : '#666',
+              borderRadius: '0.5rem',
+              cursor: 'pointer',
+              fontWeight: '600'
+            }}
+          >
+            Seguridad
+          </button>
+          <button
+            onClick={() => setActiveTab('advanced')}
+            style={{
+              padding: '0.75rem 1.5rem',
+              border: 'none',
+              background: activeTab === 'advanced' ? '#1976d2' : 'transparent',
+              color: activeTab === 'advanced' ? 'white' : '#666',
+              borderRadius: '0.5rem',
+              cursor: 'pointer',
+              fontWeight: '600'
+            }}
+          >
+            Avanzado
+          </button>
+        </div>
+
+        {/* Message */}
         {message.text && (
           <div style={{
-            padding: '0.75rem',
-            marginBottom: '1rem',
+            padding: '1rem',
             borderRadius: '0.5rem',
-            backgroundColor: message.type === 'success' ? '#1a3a1a' : '#3a1a1a',
-            color: message.type === 'success' ? '#10b981' : '#ef4444',
-            fontSize: '0.875rem'
+            marginBottom: '1.5rem',
+            backgroundColor: message.type === 'success' ? '#d1fae5' : '#fee2e2',
+            color: message.type === 'success' ? '#065f46' : '#991b1b',
+            border: `1px solid ${message.type === 'success' ? '#a7f3d0' : '#fecaca'}`
           }}>
-            {message.type === 'success' ? '✓ ' : '✗ '}{message.text}
+            {message.text}
           </div>
         )}
 
-        {/* Personalización */}
-        <div style={{ marginBottom: '1.5rem' }}>
-          <h3 style={{ color: 'white', margin: '0 0 1rem 0', fontSize: '1rem' }}>Personalización</h3>
-          
-          <div style={{ marginBottom: '1rem' }}>
-            <label style={{ display: 'block', color: '#ccc', marginBottom: '0.5rem', fontSize: '0.875rem' }}>
-              Nombre de la aplicación
-            </label>
-            <input
-              type="text"
-              value={formData.app_name}
-              onChange={(e) => setFormData({ ...formData, app_name: e.target.value })}
-              disabled={loading}
-              style={{
-                width: '100%',
-                padding: '0.75rem',
-                border: '1px solid #333',
-                borderRadius: '0.5rem',
-                backgroundColor: '#2a2a2a',
-                color: 'white',
-                boxSizing: 'border-box',
-                opacity: loading ? 0.6 : 1
-              }}
-            />
-          </div>
+        {/* General Tab */}
+        {activeTab === 'general' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+            <div>
+              <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600' }}>
+                Nombre de la Aplicación
+              </label>
+              <input
+                type="text"
+                value={formData.app_name}
+                onChange={(e) => setFormData({ ...formData, app_name: e.target.value })}
+                style={{
+                  width: '100%',
+                  padding: '0.75rem',
+                  border: '1px solid #d1d5db',
+                  borderRadius: '0.5rem',
+                  fontSize: '1rem'
+                }}
+                placeholder="Ingresa el nombre de la aplicación"
+              />
+            </div>
 
-          <div style={{ marginBottom: '1rem' }}>
-            <label style={{ display: 'block', color: '#ccc', marginBottom: '0.5rem', fontSize: '0.875rem' }}>
-              Moneda
-            </label>
-            <select
-              value={formData.currency}
-              onChange={(e) => setFormData({ ...formData, currency: e.target.value })}
+            <div>
+              <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600' }}>
+                Moneda
+              </label>
+              <select
+                value={formData.currency}
+                onChange={(e) => setFormData({ ...formData, currency: e.target.value })}
+                style={{
+                  width: '100%',
+                  padding: '0.75rem',
+                  border: '1px solid #d1d5db',
+                  borderRadius: '0.5rem',
+                  fontSize: '1rem'
+                }}
+              >
+                <option value="COP">Peso Colombiano (COP)</option>
+                <option value="USD">Dólar Americano (USD)</option>
+                <option value="EUR">Euro (EUR)</option>
+                <option value="MXN">Peso Mexicano (MXN)</option>
+              </select>
+            </div>
+
+            <div>
+              <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600' }}>
+                Colores del Tema
+              </label>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem' }}>
+                <div>
+                  <label style={{ fontSize: '0.875rem', color: '#666', marginBottom: '0.25rem' }}>
+                    Color Primario
+                  </label>
+                  <input
+                    type="color"
+                    value={formData.color_primary}
+                    onChange={(e) => setFormData({ ...formData, color_primary: e.target.value })}
+                    style={{
+                      width: '100%',
+                      height: '50px',
+                      border: '1px solid #d1d5db',
+                      borderRadius: '0.5rem',
+                      cursor: 'pointer'
+                    }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: '0.875rem', color: '#666', marginBottom: '0.25rem' }}>
+                    Color Secundario
+                  </label>
+                  <input
+                    type="color"
+                    value={formData.color_secondary}
+                    onChange={(e) => setFormData({ ...formData, color_secondary: e.target.value })}
+                    style={{
+                      width: '100%',
+                      height: '50px',
+                      border: '1px solid #d1d5db',
+                      borderRadius: '0.5rem',
+                      cursor: 'pointer'
+                    }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: '0.875rem', color: '#666', marginBottom: '0.25rem' }}>
+                    Color de Acento
+                  </label>
+                  <input
+                    type="color"
+                    value={formData.color_accent}
+                    onChange={(e) => setFormData({ ...formData, color_accent: e.target.value })}
+                    style={{
+                      width: '100%',
+                      height: '50px',
+                      border: '1px solid #d1d5db',
+                      borderRadius: '0.5rem',
+                      cursor: 'pointer'
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+              <input
+                type="checkbox"
+                id="thousands_separator"
+                checked={formData.thousands_separator}
+                onChange={(e) => setFormData({ ...formData, thousands_separator: e.target.checked })}
+                style={{
+                  width: '20px',
+                  height: '20px',
+                  cursor: 'pointer'
+                }}
+              />
+              <label htmlFor="thousands_separator" style={{ cursor: 'pointer', fontWeight: '600' }}>
+                Usar separador de miles en los números
+              </label>
+            </div>
+
+            <div style={{
+              padding: '1rem',
+              backgroundColor: '#f8f9fa',
+              borderRadius: '0.5rem',
+              border: '1px solid #e9ecef'
+            }}>
+              <h4 style={{ margin: '0 0 0.5rem 0', color: '#495057' }}>Vista Previa:</h4>
+              <p style={{ margin: 0, color: '#6c757d' }}>
+                {formatCurrency(1234567.89)}
+              </p>
+            </div>
+
+            <button
+              onClick={handleSaveSettings}
               disabled={loading}
               style={{
-                width: '100%',
-                padding: '0.75rem',
-                border: '1px solid #333',
-                borderRadius: '0.5rem',
-                backgroundColor: '#2a2a2a',
+                padding: '0.75rem 1.5rem',
+                backgroundColor: '#1976d2',
                 color: 'white',
-                boxSizing: 'border-box',
+                border: 'none',
+                borderRadius: '0.5rem',
+                cursor: loading ? 'not-allowed' : 'pointer',
+                fontWeight: '600',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '0.5rem',
                 opacity: loading ? 0.6 : 1
               }}
             >
-              <option value="COP">COP - Peso Colombiano</option>
-              <option value="USD">USD - Dólar Americano</option>
-              <option value="EUR">EUR - Euro</option>
-              <option value="MXN">MXN - Peso Mexicano</option>
-            </select>
+              <Save size={18} />
+              {loading ? 'Guardando...' : 'Guardar Configuración'}
+            </button>
           </div>
+        )}
 
-          <div style={{ marginBottom: '1rem' }}>
-            <label style={{ display: 'flex', alignItems: 'center', color: '#ccc', cursor: 'pointer' }}>
-              <input
-                type="checkbox"
-                checked={formData.use_thousands_separator}
-                onChange={(e) => setFormData({ ...formData, use_thousands_separator: e.target.checked })}
-                disabled={loading}
-                style={{ marginRight: '0.5rem', cursor: 'pointer' }}
-              />
-              <span style={{ fontSize: '0.875rem' }}>Usar separador de miles</span>
-            </label>
-          </div>
-
-          <div style={{ marginBottom: '1rem' }}>
-            <label style={{ display: 'block', color: '#ccc', marginBottom: '0.5rem', fontSize: '0.875rem' }}>
-              Color primario
-            </label>
-            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-              <input
-                type="color"
-                value={formData.primary_color}
-                onChange={(e) => setFormData({ ...formData, primary_color: e.target.value })}
-                disabled={loading}
-                style={{
-                  width: '50px',
-                  height: '40px',
-                  padding: '0.25rem',
-                  border: '1px solid #333',
-                  borderRadius: '0.5rem',
-                  cursor: loading ? 'not-allowed' : 'pointer'
-                }}
-              />
-              <span style={{ color: '#999', fontSize: '0.875rem' }}>{formData.primary_color}</span>
+        {/* Security Tab */}
+        {activeTab === 'security' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+            <div>
+              <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600' }}>
+                Contraseña Actual
+              </label>
+              <div style={{ position: 'relative' }}>
+                <input
+                  type={showPasswords.current ? 'text' : 'password'}
+                  value={passwordData.currentPassword}
+                  onChange={(e) => setPasswordData({ ...passwordData, currentPassword: e.target.value })}
+                  style={{
+                    width: '100%',
+                    padding: '0.75rem',
+                    paddingRight: '3rem',
+                    border: '1px solid #d1d5db',
+                    borderRadius: '0.5rem',
+                    fontSize: '1rem'
+                  }}
+                  placeholder="Ingresa tu contraseña actual"
+                />
+                <button
+                  onClick={() => togglePasswordVisibility('current')}
+                  style={{
+                    position: 'absolute',
+                    right: '0.75rem',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    color: '#666'
+                  }}
+                >
+                  {showPasswords.current ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
             </div>
-          </div>
 
-          <div style={{ marginBottom: '1rem' }}>
-            <label style={{ display: 'block', color: '#ccc', marginBottom: '0.5rem', fontSize: '0.875rem' }}>
-              Color secundario
-            </label>
-            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-              <input
-                type="color"
-                value={formData.secondary_color}
-                onChange={(e) => setFormData({ ...formData, secondary_color: e.target.value })}
-                disabled={loading}
-                style={{
-                  width: '50px',
-                  height: '40px',
-                  padding: '0.25rem',
-                  border: '1px solid #333',
-                  borderRadius: '0.5rem',
-                  cursor: loading ? 'not-allowed' : 'pointer'
-                }}
-              />
-              <span style={{ color: '#999', fontSize: '0.875rem' }}>{formData.secondary_color}</span>
+            <div>
+              <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600' }}>
+                Nueva Contraseña
+              </label>
+              <div style={{ position: 'relative' }}>
+                <input
+                  type={showPasswords.new ? 'text' : 'password'}
+                  value={passwordData.newPassword}
+                  onChange={(e) => setPasswordData({ ...passwordData, newPassword: e.target.value })}
+                  style={{
+                    width: '100%',
+                    padding: '0.75rem',
+                    paddingRight: '3rem',
+                    border: '1px solid #d1d5db',
+                    borderRadius: '0.5rem',
+                    fontSize: '1rem'
+                  }}
+                  placeholder="Ingresa tu nueva contraseña"
+                />
+                <button
+                  onClick={() => togglePasswordVisibility('new')}
+                  style={{
+                    position: 'absolute',
+                    right: '0.75rem',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    color: '#666'
+                  }}
+                >
+                  {showPasswords.new ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
             </div>
+
+            <div>
+              <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600' }}>
+                Confirmar Nueva Contraseña
+              </label>
+              <div style={{ position: 'relative' }}>
+                <input
+                  type={showPasswords.confirm ? 'text' : 'password'}
+                  value={passwordData.confirmPassword}
+                  onChange={(e) => setPasswordData({ ...passwordData, confirmPassword: e.target.value })}
+                  style={{
+                    width: '100%',
+                    padding: '0.75rem',
+                    paddingRight: '3rem',
+                    border: '1px solid #d1d5db',
+                    borderRadius: '0.5rem',
+                    fontSize: '1rem'
+                  }}
+                  placeholder="Confirma tu nueva contraseña"
+                />
+                <button
+                  onClick={() => togglePasswordVisibility('confirm')}
+                  style={{
+                    position: 'absolute',
+                    right: '0.75rem',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    color: '#666'
+                  }}
+                >
+                  {showPasswords.confirm ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
+            </div>
+
+            <button
+              onClick={handleChangePassword}
+              disabled={loading}
+              style={{
+                padding: '0.75rem 1.5rem',
+                backgroundColor: '#dc3545',
+                color: 'white',
+                border: 'none',
+                borderRadius: '0.5rem',
+                cursor: loading ? 'not-allowed' : 'pointer',
+                fontWeight: '600',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '0.5rem',
+                opacity: loading ? 0.6 : 1
+              }}
+            >
+              <Lock size={18} />
+              {loading ? 'Cambiando...' : 'Cambiar Contraseña'}
+            </button>
           </div>
-        </div>
+        )}
 
-        {/* Separador */}
-        <div style={{ borderTop: '1px solid #333', margin: '1.5rem 0' }}></div>
+        {/* Advanced Tab */}
+        {activeTab === 'advanced' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+            <div style={{
+              padding: '1.5rem',
+              backgroundColor: '#fff3cd',
+              border: '1px solid #ffeaa7',
+              borderRadius: '0.5rem'
+            }}>
+              <h4 style={{ margin: '0 0 0.5rem 0', color: '#856404' }}>⚠️ Advertencia</h4>
+              <p style={{ margin: 0, color: '#856404', fontSize: '0.9rem' }}>
+                Esta acción restaurará todas las configuraciones a sus valores por defecto. 
+                Esta operación no se puede deshacer.
+              </p>
+            </div>
 
-        {/* Cambiar Contraseña */}
-        <div style={{ marginBottom: '1.5rem' }}>
-          <h3 style={{ color: 'white', margin: '0 0 1rem 0', fontSize: '1rem' }}>Cambiar Contraseña</h3>
-          
-          <div style={{ marginBottom: '1rem' }}>
-            <input
-              type="password"
-              placeholder="Contraseña actual"
-              value={passwordData.currentPassword}
-              onChange={(e) => setPasswordData({ ...passwordData, currentPassword: e.target.value })}
+            <button
+              onClick={handleResetSettings}
               disabled={loading}
               style={{
-                width: '100%',
-                padding: '0.75rem',
-                border: '1px solid #333',
-                borderRadius: '0.5rem',
-                backgroundColor: '#2a2a2a',
+                padding: '0.75rem 1.5rem',
+                backgroundColor: '#6c757d',
                 color: 'white',
-                marginBottom: '0.5rem',
-                boxSizing: 'border-box',
+                border: 'none',
+                borderRadius: '0.5rem',
+                cursor: loading ? 'not-allowed' : 'pointer',
+                fontWeight: '600',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '0.5rem',
                 opacity: loading ? 0.6 : 1
               }}
-            />
-            <input
-              type="password"
-              placeholder="Nueva contraseña"
-              value={passwordData.newPassword}
-              onChange={(e) => setPasswordData({ ...passwordData, newPassword: e.target.value })}
-              disabled={loading}
-              style={{
-                width: '100%',
-                padding: '0.75rem',
-                border: '1px solid #333',
-                borderRadius: '0.5rem',
-                backgroundColor: '#2a2a2a',
-                color: 'white',
-                marginBottom: '0.5rem',
-                boxSizing: 'border-box',
-                opacity: loading ? 0.6 : 1
-              }}
-            />
-            <input
-              type="password"
-              placeholder="Confirmar nueva contraseña"
-              value={passwordData.confirmPassword}
-              onChange={(e) => setPasswordData({ ...passwordData, confirmPassword: e.target.value })}
-              disabled={loading}
-              style={{
-                width: '100%',
-                padding: '0.75rem',
-                border: '1px solid #333',
-                borderRadius: '0.5rem',
-                backgroundColor: '#2a2a2a',
-                color: 'white',
-                boxSizing: 'border-box',
-                opacity: loading ? 0.6 : 1
-              }}
-            />
+            >
+              <RefreshCw size={18} />
+              {loading ? 'Restaurando...' : 'Restaurar Configuración por Defecto'}
+            </button>
           </div>
-          <button
-            onClick={handlePasswordChange}
-            disabled={loading}
-            style={{
-              width: '100%',
-              padding: '0.75rem 1rem',
-              backgroundColor: loading ? '#555' : '#2563eb',
-              color: 'white',
-              border: 'none',
-              borderRadius: '0.5rem',
-              cursor: loading ? 'not-allowed' : 'pointer',
-              fontWeight: '600',
-              fontSize: '0.875rem'
-            }}
-          >
-            {loading ? 'Procesando...' : 'Cambiar Contraseña'}
-          </button>
-        </div>
-
-        {/* Botones de acción */}
-        <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end', borderTop: '1px solid #333', paddingTop: '1.5rem' }}>
-          <button
-            onClick={onClose}
-            disabled={loading}
-            style={{
-              padding: '0.75rem 1.5rem',
-              backgroundColor: 'transparent',
-              color: loading ? '#666' : 'white',
-              border: `1px solid ${loading ? '#555' : '#333'}`,
-              borderRadius: '0.5rem',
-              cursor: loading ? 'not-allowed' : 'pointer',
-              fontWeight: '600',
-              fontSize: '0.875rem'
-            }}
-          >
-            Cancelar
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={loading}
-            style={{
-              padding: '0.75rem 1.5rem',
-              backgroundColor: loading ? '#0d7944' : '#10b981',
-              color: 'white',
-              border: 'none',
-              borderRadius: '0.5rem',
-              cursor: loading ? 'not-allowed' : 'pointer',
-              fontWeight: '600',
-              fontSize: '0.875rem'
-            }}
-          >
-            {loading ? 'Guardando...' : 'Guardar'}
-          </button>
-        </div>
+        )}
       </div>
     </div>
   );

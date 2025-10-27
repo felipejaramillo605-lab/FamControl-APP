@@ -16,6 +16,7 @@ export const useSettingsStore = create(
         color_accent: '#82B1FF'
       },
       currentQuote: null,
+      lastQuoteDate: null,
       
       // Acciones
       loadSettings: async () => {
@@ -97,35 +98,86 @@ export const useSettingsStore = create(
       },
       
       loadRandomQuote: async () => {
-        return new Promise(async (resolve, reject) => {
-          try {
-            if (typeof window === 'undefined') {
-              resolve();
-              return;
-            }
-            
-            const { data, error } = await supabase
-              .from('daily_quotes')
-              .select('*');
-            
-            if (error) {
-              reject(error);
-              return;
-            }
-            
-            if (data && data.length > 0) {
-              // Seleccionar una frase aleatoria
-              const randomIndex = Math.floor(Math.random() * data.length);
-              set({ currentQuote: data[randomIndex] });
-              resolve(data[randomIndex]);
-            } else {
-              resolve();
-            }
-          } catch (error) {
-            console.error('Error loading quote:', error);
-            reject(error);
+        try {
+          if (typeof window === 'undefined') return;
+
+          const { data, error } = await supabase
+            .from('daily_quotes')
+            .select('*');
+          
+          if (error) {
+            throw error;
           }
-        });
+          
+          if (data && data.length > 0) {
+            // Seleccionar una frase aleatoria
+            const randomIndex = Math.floor(Math.random() * data.length);
+            const selectedQuote = data[randomIndex];
+            set({ currentQuote: selectedQuote });
+            return selectedQuote;
+          } else {
+            // Si no hay frases en la base de datos, usar frases por defecto
+            const defaultQuotes = [
+              {
+                quote: "El arte de la guerra se basa en el engaño.",
+                author: "Sun Tzu"
+              },
+              {
+                quote: "La paciencia es amarga, pero su fruto es dulce.",
+                author: "Jean-Jacques Rousseau"
+              },
+              {
+                quote: "El único verdadero viaje de descubrimiento consiste no en buscar nuevos paisajes, sino en mirar con nuevos ojos.",
+                author: "Marcel Proust"
+              },
+              {
+                quote: "La vida es lo que pasa mientras estás ocupado haciendo otros planes.",
+                author: "John Lennon"
+              },
+              {
+                quote: "No cuentes los días, haz que los días cuenten.",
+                author: "Muhammad Ali"
+              }
+            ];
+            
+            const randomIndex = Math.floor(Math.random() * defaultQuotes.length);
+            const defaultQuote = defaultQuotes[randomIndex];
+            set({ currentQuote: defaultQuote });
+            return defaultQuote;
+          }
+        } catch (error) {
+          console.error('Error loading quote:', error);
+          // En caso de error, usar una frase por defecto
+          const fallbackQuote = {
+            quote: "La perseverancia es el camino al éxito.",
+            author: "Anónimo"
+          };
+          set({ currentQuote: fallbackQuote });
+          return fallbackQuote;
+        }
+      },
+
+      // Nueva función: Cargar frase solo una vez al día
+      loadDailyQuote: async () => {
+        try {
+          if (typeof window === 'undefined') return;
+          
+          const state = get();
+          const today = new Date().toDateString();
+          
+          // Si ya tenemos una frase de hoy, no cargar nueva
+          if (state.lastQuoteDate === today && state.currentQuote) {
+            return state.currentQuote;
+          }
+          
+          // Cargar nueva frase
+          const quote = await state.loadRandomQuote();
+          set({ lastQuoteDate: today });
+          return quote;
+        } catch (error) {
+          console.error('Error loading daily quote:', error);
+          return null;
+        }
       },
       
       applyThemeColors: (settings) => {
@@ -154,14 +206,68 @@ export const useSettingsStore = create(
         } else {
           return `$${numericAmount}`;
         }
+      },
+
+      // Función auxiliar para obtener configuraciones específicas
+      getSetting: (key) => {
+        const { settings } = get();
+        return settings[key];
+      },
+
+      // Función para resetear configuraciones a valores por defecto
+      resetSettings: async () => {
+        try {
+          if (typeof window === 'undefined') return false;
+          
+          const { data: { user } } = await supabase.auth.getUser();
+          if (!user) return false;
+          
+          const defaultSettings = {
+            app_name: 'FamControl v2',
+            currency: 'COP',
+            thousands_separator: true,
+            color_primary: '#1976d2',
+            color_secondary: '#424242',
+            color_accent: '#82B1FF'
+          };
+          
+          const { error } = await supabase
+            .from('user_settings')
+            .upsert({
+              user_id: user.id,
+              ...defaultSettings,
+              updated_at: new Date().toISOString()
+            });
+          
+          if (!error) {
+            set({ settings: defaultSettings });
+            get().applyThemeColors(defaultSettings);
+            return true;
+          }
+          return false;
+        } catch (error) {
+          console.error('Error resetting settings:', error);
+          return false;
+        }
       }
     }),
     {
       name: 'settings-storage',
-      partialize: (state) => ({ settings: state.settings }),
+      partialize: (state) => ({ 
+        settings: state.settings,
+        currentQuote: state.currentQuote,
+        lastQuoteDate: state.lastQuoteDate
+      }),
       // Configuración para evitar errores en SSR
       skipHydration: false,
-      version: 1
+      version: 1,
+      migrate: (persistedState, version) => {
+        // Migración de versiones futuras si es necesario
+        if (version === 0) {
+          // Ejemplo: migrar desde versión 0 a 1
+        }
+        return persistedState;
+      }
     }
   )
 );

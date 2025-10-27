@@ -148,12 +148,29 @@ export default function FamControl() {
     checkSession();
   }, []);
 
+  // MEJORA APLICADA: useEffect corregido para evitar el error
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    
-    settingsStore.loadSettings();
-    // Cambiado a loadDailyQuote para prevenir ciclos infinitos
-    settingsStore.loadDailyQuote();
+    const initializeSettings = async () => {
+      if (typeof window === 'undefined') return;
+      
+      try {
+        // Esperar a que el store esté completamente hidratado
+        await new Promise(resolve => setTimeout(resolve, 0));
+        
+        // Verificar que las funciones existen antes de llamarlas
+        if (settingsStore && typeof settingsStore.loadSettings === 'function') {
+          await settingsStore.loadSettings();
+        }
+        
+        if (settingsStore && typeof settingsStore.loadDailyQuote === 'function') {
+          await settingsStore.loadDailyQuote();
+        }
+      } catch (error) {
+        console.error('Error initializing settings:', error);
+      }
+    };
+
+    initializeSettings();
   }, [settingsStore]);
 
   const debugSync = async (userId) => {
@@ -873,7 +890,7 @@ export default function FamControl() {
 
   // Función para formatear números con separadores de miles
   const formatNumber = (number) => {
-    const useSeparator = settingsStore.settings.thousands_separator !== false;
+    const useSeparator = settingsStore.settings?.thousands_separator !== false;
     return useSeparator ? number.toLocaleString('es-CO') : number.toString();
   };
 
@@ -917,7 +934,7 @@ export default function FamControl() {
     <div style={{ minHeight: '100vh', backgroundColor: bg }}>
       <div style={{ backgroundColor: card, borderBottom: `1px solid ${border}`, padding: '1rem 2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', color: text, margin: 0 }}>
-          {settingsStore.settings.app_name}
+          {settingsStore.settings?.app_name || 'FamControl v2'}
         </h1>
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
           <button
