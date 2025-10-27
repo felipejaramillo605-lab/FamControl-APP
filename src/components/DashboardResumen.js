@@ -7,7 +7,7 @@ import {
 } from 'recharts';
 import { TrendingUp, AlertCircle, Target, Wallet, DollarSign, PieChart as PieIcon } from 'lucide-react';
 
-const DashboardResumen = ({ transactions = [], accounts = [], goals = [], budgets = {} }) => {
+const DashboardResumen = ({ transactions = [], accounts = [], goals = [], budgets = [] }) => {
   const [filterPeriod, setFilterPeriod] = useState('6months');
   const [selectedCategory, setSelectedCategory] = useState(null);
 
@@ -133,7 +133,7 @@ const DashboardResumen = ({ transactions = [], accounts = [], goals = [], budget
     const diasAutonomia = (calculateMetrics.efectivoDisponible / gastosMensuales) * 30;
 
     const progresoMetas = goals.length > 0
-      ? (Object.values(goals).reduce((sum, g) => {
+      ? (goals.reduce((sum, g) => {
           const saved = (parseFloat(g.current_saved) || 0);
           const target = (parseFloat(g.target_amount) || 0);
           return sum + (target > 0 ? (saved / target) * 100 : 0);
@@ -461,7 +461,7 @@ const DashboardResumen = ({ transactions = [], accounts = [], goals = [], budget
             <div style={{
               padding: '1rem',
               backgroundColor: '#d1fae5',
-              border: '1px solid '#a7f3d0',
+              border: '1px solid #a7f3d0',
               borderRadius: '0.5rem',
               borderLeft: '4px solid #10b981'
             }}>
