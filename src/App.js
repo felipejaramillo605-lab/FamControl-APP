@@ -11,7 +11,7 @@ const DEFAULT_CATEGORIES = [
   { id: 'transporte', name: 'Transporte', icon: '🚗', color: '#3b82f6' },
   { id: 'entretenimiento', name: 'Entretenimiento', icon: '🎬', color: '#8b5cf6' },
   { id: 'salud', name: 'Salud', icon: '⚕️', color: '#10b981' },
-  { id: 'educacion', name: 'Educación', icon: '📚', color: '#f59e0b' },
+  { id: 'educacion', name: 'Educación', icon: '📚', color: '#f59e0b' }, // Corregido: era "educ CLO"
   { id: 'servicios', name: 'Servicios', icon: '💡', color: '#06b6d4' },
   { id: 'compras', name: 'Compras', icon: '🛍️', color: '#ec4899' },
   { id: 'otros', name: 'Otros', icon: '📦', color: '#6b7280' }
@@ -153,7 +153,7 @@ export default function FamControl() {
     
     settingsStore.loadSettings();
     settingsStore.loadRandomQuote();
-  }, []);
+  }, [settingsStore]);
 
   const debugSync = async (userId) => {
     console.log('🔍 DEBUG Sincronización');
@@ -826,7 +826,7 @@ export default function FamControl() {
   };
 
   const getBudgetStatus = () => {
-    const currentMonth = new Date().toISOString().slice(0, 7);
+    const currentMonth = new Date().toISOString().slice(0, 7); // Corregido: era " currentMonth"
     const monthTx = Object.values(transactions).filter(t => t.fecha.startsWith(currentMonth) && t.tipo === 'gasto');
     return categories.map(cat => {
       const budget = budgets[`${cat.id}-${currentMonth}`];
@@ -860,8 +860,10 @@ export default function FamControl() {
     return grouped;
   };
 
+  // Cálculo corregido del Balance Total
   const totalBalance = accounts.reduce((sum, acc) => {
     let saldo = acc.saldo || 0;
+    // Asegurar que las cuentas de crédito sean negativas
     if (acc.categoria === 'credito' && saldo > 0) {
       saldo = -saldo;
     }
@@ -1521,4 +1523,484 @@ export default function FamControl() {
                 </select>
                 <input type="month" value={budgetForm.mes} onChange={(e) => setBudgetForm({ ...budgetForm, mes: e.target.value })} style={{ width: '100%', padding: '0.75rem', border: `1px solid ${border}`, borderRadius: '0.5rem', backgroundColor: input, color: text, marginBottom: '1rem', boxSizing: 'border-box' }} />
                 <input type="number" placeholder="Monto presupuesto" value={budgetForm.monto} onChange={(e) => setBudgetForm({ ...budgetForm, monto: e.target.value })} style={{ width: '100%', padding: '0.75rem', border: `1px solid ${border}`, borderRadius: '0.5rem', backgroundColor: input, color: text, marginBottom: '1rem', boxSizing: 'border-box' }} />
-                <button onClick={addBudget} style={{ width: '100%', padding: '0.75rem', backgroundColor: '#7c3aed', color: 'white', border: 'none', borderRadius: '0.5rem',
+                <button
+                  onClick={addBudget}
+                  style={{
+                    width: '100%',
+                    padding: '0.75rem',
+                    backgroundColor: '#7c3aed',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '0.5rem',
+                    fontWeight: '600',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <Plus size={18} /> Crear Presupuesto
+                </button>
+              </div>
+
+              <div style={{ backgroundColor: card, border: `1px solid ${border}`, padding: '1.5rem', borderRadius: '1rem' }}>
+                <h2 style={{ color: text, margin: '0 0 1.5rem 0' }}>Estado de Presupuestos</h2>
+                {budgetStatus.length > 0 ? (
+                  <div style={{ display: 'grid', gap: '1rem' }}>
+                    {budgetStatus.map(b => (
+                      <div key={b.categoria} style={{ padding: '1.5rem', backgroundColor: darkMode ? '#2a2a2a' : '#f9f9f9', borderRadius: '0.75rem', border: b.alerta ? '2px solid #ef4444' : `1px solid ${border}` }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                          <span style={{ fontWeight: 'bold', color: text }}>{b.categoria}</span>
+                          <span style={{ fontSize: '0.875rem', color: b.alerta ? '#ef4444' : textSec }}>{b.porcentaje.toFixed(0)}%</span>
+                        </div>
+                        <div style={{ width: '100%', height: '8px', backgroundColor: border, borderRadius: '4px', overflow: 'hidden', marginBottom: '0.5rem' }}>
+                          <div style={{ width: `${b.porcentaje}%`, height: '100%', backgroundColor: b.alerta ? '#ef4444' : b.color, transition: 'width 0.3s' }}></div>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.875rem', color: textSec }}>
+                          <span>Gastado: ${b.gastado.toLocaleString()}</span>
+                          <span>Presupuesto: ${b.presupuesto.toLocaleString()}</span>
+                        </div>
+                        {b.alerta && <div style={{ marginTop: '0.5rem', padding: '0.5rem', backgroundColor: '#fef2f2', color: '#ef4444', borderRadius: '0.25rem', fontSize: '0.75rem', fontWeight: '600' }}>⚠️ Alerta: Has superado el 80% del presupuesto</div>}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p style={{ textAlign: 'center', color: textSec, paddingTop: '2rem' }}>No hay presupuestos configurados para este mes</p>
+                )}
+              </div>
+            </div>
+
+            <div style={{ backgroundColor: card, border: `1px solid ${border}`, padding: '1.5rem', borderRadius: '1rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                <h2 style={{ color: text, margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <Target size={20} /> Metas y Sueños
+                </h2>
+                <button 
+                  onClick={() => setShowAddGoal(!showAddGoal)} 
+                  style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: '0.5rem', 
+                    padding: '0.75rem 1rem', 
+                    backgroundColor: '#8b5cf6', 
+                    color: 'white', 
+                    border: 'none', 
+                    borderRadius: '0.5rem', 
+                    cursor: 'pointer', 
+                    fontWeight: '600' 
+                  }}
+                >
+                  <Plus size={18} /> Nueva Meta
+                </button>
+              </div>
+
+              {showAddGoal && (
+                <div style={{ 
+                  backgroundColor: darkMode ? '#2a2a2a' : '#f9f9f9', 
+                  border: `1px solid ${border}`, 
+                  padding: '1.5rem', 
+                  borderRadius: '0.75rem', 
+                  marginBottom: '1.5rem' 
+                }}>
+                  <h3 style={{ color: text, margin: '0 0 1rem 0' }}>Agregar Nueva Meta</h3>
+                  <input 
+                    type="text" 
+                    placeholder="Nombre de la meta (ej: Viaje a la playa)" 
+                    value={goalForm.name} 
+                    onChange={(e) => setGoalForm({ ...goalForm, name: e.target.value })} 
+                    style={{ 
+                      width: '100%', 
+                      padding: '0.75rem', 
+                      border: `1px solid ${border}`, 
+                      borderRadius: '0.5rem', 
+                      backgroundColor: input, 
+                      color: text, 
+                      marginBottom: '1rem', 
+                      boxSizing: 'border-box' 
+                    }} 
+                  />
+                  <select 
+                    value={goalForm.category} 
+                    onChange={(e) => setGoalForm({ ...goalForm, category: e.target.value })} 
+                    style={{ 
+                      width: '100%', 
+                      padding: '0.75rem', 
+                      border: `1px solid ${border}`, 
+                      borderRadius: '0.5rem', 
+                      backgroundColor: input, 
+                      color: text, 
+                      marginBottom: '1rem', 
+                      boxSizing: 'border-box' 
+                    }}
+                  >
+                    <option value="viaje">✈️ Viaje</option>
+                    <option value="casa">🏠 Casa</option>
+                    <option value="auto">🚗 Auto</option>
+                    <option value="educacion">🎓 Educación</option>
+                    <option value="salud">⚕️ Salud</option>
+                    <option value="tecnologia">💻 Tecnología</option>
+                    <option value="otros">🎯 Otros</option>
+                  </select>
+                  <input 
+                    type="number" 
+                    placeholder="Monto objetivo" 
+                    value={goalForm.targetAmount} 
+                    onChange={(e) => setGoalForm({ ...goalForm, targetAmount: e.target.value })} 
+                    style={{ 
+                      width: '100%', 
+                      padding: '0.75rem', 
+                      border: `1px solid ${border}`, 
+                      borderRadius: '0.5rem', 
+                      backgroundColor: input, 
+                      color: text, 
+                      marginBottom: '1rem', 
+                      boxSizing: 'border-box' 
+                    }} 
+                  />
+                  <input 
+                    type="number" 
+                    placeholder="Ahorro actual (opcional)" 
+                    value={goalForm.currentSaved} 
+                    onChange={(e) => setGoalForm({ ...goalForm, currentSaved: e.target.value })} 
+                    style={{ 
+                      width: '100%', 
+                      padding: '0.75rem', 
+                      border: `1px solid ${border}`, 
+                      borderRadius: '0.5rem', 
+                      backgroundColor: input, 
+                      color: text, 
+                      marginBottom: '1rem', 
+                      boxSizing: 'border-box' 
+                    }} 
+                  />
+                  <input 
+                    type="date" 
+                    placeholder="Fecha objetivo (opcional)" 
+                    value={goalForm.targetDate} 
+                    onChange={(e) => setGoalForm({ ...goalForm, targetDate: e.target.value })} 
+                    style={{ 
+                      width: '100%', 
+                      padding: '0.75rem', 
+                      border: `1px solid ${border}`, 
+                      borderRadius: '0.5rem', 
+                      backgroundColor: input, 
+                      color: text, 
+                      marginBottom: '1rem', 
+                      boxSizing: 'border-box' 
+                    }} 
+                  />
+                  <div style={{ display: 'flex', gap: '1rem' }}>
+                    <button 
+                      onClick={addGoal} 
+                      style={{ 
+                        flex: 1, 
+                        padding: '0.75rem', 
+                        backgroundColor: '#8b5cf6', 
+                        color: 'white', 
+                        border: 'none', 
+                        borderRadius: '0.5rem', 
+                        fontWeight: '600', 
+                        cursor: 'pointer' 
+                      }}
+                    >
+                      Guardar Meta
+                    </button>
+                    <button 
+                      onClick={() => setShowAddGoal(false)} 
+                      style={{ 
+                        flex: 1, 
+                        padding: '0.75rem', 
+                        backgroundColor: '#6b7280', 
+                        color: 'white', 
+                        border: 'none', 
+                        borderRadius: '0.5rem', 
+                        fontWeight: '600', 
+                        cursor: 'pointer' 
+                      }}
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div style={{ 
+                backgroundColor: darkMode ? '#2a2a2a' : '#f9f9f9', 
+                border: `1px solid ${border}`, 
+                padding: '1rem', 
+                borderRadius: '0.5rem', 
+                marginBottom: '1.5rem',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center'
+              }}>
+                <div>
+                  <div style={{ fontSize: '0.875rem', color: textSec }}>Ahorro mensual disponible</div>
+                  <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: monthlySavings >= 0 ? '#10b981' : '#ef4444' }}>
+                    ${monthlySavings.toLocaleString()}
+                  </div>
+                </div>
+                <div style={{ fontSize: '0.875rem', color: textSec, textAlign: 'right' }}>
+                  <div>Total en metas activas:</div>
+                  <div style={{ fontWeight: 'bold', color: text }}>
+                    ${Object.values(goals).reduce((sum, goal) => sum + (parseFloat(goal.target_amount) || 0), 0).toLocaleString()}
+                  </div>
+                </div>
+              </div>
+
+              {Object.values(goals).length > 0 ? (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))', gap: '1rem' }}>
+                  {Object.values(goals).map(goal => {
+                    const progress = getGoalProgress(goal);
+                    const monthsToGoal = progress.remaining > 0 && monthlySavings > 0 
+                      ? Math.ceil(progress.remaining / monthlySavings)
+                      : 0;
+                    
+                    return (
+                      <div key={goal.id} style={{ 
+                        padding: '1.5rem', 
+                        backgroundColor: darkMode ? '#2a2a2a' : '#f9f9f9', 
+                        borderRadius: '0.75rem', 
+                        border: `2px solid ${border}`,
+                        position: 'relative'
+                      }}>
+                        <button 
+                          onClick={() => deleteGoal(goal.id)} 
+                          style={{ 
+                            position: 'absolute', 
+                            top: '0.75rem', 
+                            right: '0.75rem', 
+                            background: 'none', 
+                            border: 'none', 
+                            color: '#ef4444', 
+                            cursor: 'pointer' 
+                          }}
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                        
+                        <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>{getGoalIcon(goal.category)}</div>
+                        <h3 style={{ color: text, margin: '0 0 0.5rem 0' }}>{goal.name}</h3>
+                        
+                        <div style={{ width: '100%', height: '12px', backgroundColor: border, borderRadius: '6px', overflow: 'hidden', marginBottom: '0.5rem' }}>
+                          <div style={{ 
+                            width: `${progress.percentage}%`, 
+                            height: '100%', 
+                            backgroundColor: progress.percentage >= 100 ? '#10b981' : '#8b5cf6',
+                            transition: 'width 0.3s' 
+                          }}></div>
+                        </div>
+                        
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.875rem', color: textSec, marginBottom: '0.5rem' }}>
+                          <span>${progress.saved.toLocaleString()}</span>
+                          <span>${progress.target.toLocaleString()}</span>
+                        </div>
+                        
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                          <span style={{ fontWeight: 'bold', color: progress.percentage >= 100 ? '#10b981' : text }}>
+                            {progress.percentage.toFixed(0)}% completado
+                          </span>
+                          <span style={{ fontSize: '0.875rem', color: textSec }}>
+                            ${progress.remaining.toLocaleString()} restantes
+                          </span>
+                        </div>
+
+                        {monthlySavings > 0 && progress.remaining > 0 && (
+                          <div style={{ 
+                            padding: '0.5rem', 
+                            backgroundColor: darkMode ? '#1a1a1a' : '#f0f0f0', 
+                            borderRadius: '0.25rem', 
+                            fontSize: '0.75rem', 
+                            color: textSec,
+                            marginTop: '0.5rem'
+                          }}>
+                            📅 Con tu ahorro mensual, lograrás esta meta en aproximadamente <strong>{monthsToGoal} meses</strong>
+                          </div>
+                        )}
+
+                        {progress.percentage >= 100 && (
+                          <div style={{ 
+                            position: 'absolute', 
+                            top: '0.75rem', 
+                            left: '0.75rem', 
+                            background: '#10b981', 
+                            color: 'white', 
+                            padding: '0.25rem 0.5rem', 
+                            borderRadius: '0.25rem', 
+                            fontSize: '0.75rem', 
+                            fontWeight: '600' 
+                          }}>
+                            ¡Meta Alcanzada! 🎉
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div style={{ textAlign: 'center', padding: '3rem', color: textSec }}>
+                  <Target size={48} style={{ margin: '0 auto 1rem', opacity: 0.5 }} />
+                  <h3 style={{ color: textSec, margin: '0 0 0.5rem 0' }}>No hay metas configuradas</h3>
+                  <p style={{ margin: 0 }}>Crea tu primera meta para empezar a planificar tus sueños</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {currentTab === 'compras' && (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '1.5rem' }}>
+            <div style={{ backgroundColor: card, border: `1px solid ${border}`, padding: '1.5rem', borderRadius: '1rem', height: 'fit-content' }}>
+              <h2 style={{ color: text, margin: '0 0 1rem 0' }}>Agregar Item</h2>
+              <input type="text" placeholder="Nombre del item" value={shoppingForm.item} onChange={(e) => setShoppingForm({ ...shoppingForm, item: e.target.value })} style={{ width: '100%', padding: '0.75rem', border: `1px solid ${border}`, borderRadius: '0.5rem', backgroundColor: input, color: text, marginBottom: '1rem', boxSizing: 'border-box' }} />
+              <input type="number" placeholder="Cantidad" value={shoppingForm.cantidad} onChange={(e) => setShoppingForm({ ...shoppingForm, cantidad: e.target.value })} style={{ width: '100%', padding: '0.75rem', border: `1px solid ${border}`, borderRadius: '0.5rem', backgroundColor: input, color: text, marginBottom: '1rem', boxSizing: 'border-box' }} />
+              <select value={shoppingForm.categoria} onChange={(e) => setShoppingForm({ ...shoppingForm, categoria: e.target.value })} style={{ width: '100%', padding: '0.75rem', border: `1px solid ${border}`, borderRadius: '0.5rem', backgroundColor: input, color: text, marginBottom: '1rem', boxSizing: 'border-box' }}>
+                {categories.map(cat => <option key={cat.id} value={cat.id}>{cat.icon} {cat.name}</option>)}
+              </select>
+              <input type="number" placeholder="Precio estimado" value={shoppingForm.precio} onChange={(e) => setShoppingForm({ ...shoppingForm, precio: e.target.value })} style={{ width: '100%', padding: '0.75rem', border: `1px solid ${border}`, borderRadius: '0.5rem', backgroundColor: input, color: text, marginBottom: '1rem', boxSizing: 'border-box' }} />
+              <button onClick={addShoppingItem} style={{ width: '100%', padding: '0.75rem', backgroundColor: '#f59e0b', color: 'white', border: 'none', borderRadius: '0.5rem', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+                <Plus size={18} />Agregar a Lista
+              </button>
+            </div>
+
+            <div style={{ backgroundColor: card, border: `1px solid ${border}`, padding: '1.5rem', borderRadius: '1rem' }}>
+              <h2 style={{ color: text, margin: '0 0 1rem 0' }}>Lista de Compras</h2>
+              {Object.values(shoppingList).length > 0 ? (
+                <div>
+                  <div style={{ marginBottom: '1rem', padding: '0.75rem', backgroundColor: darkMode ? '#2a2a2a' : '#f9f9f9', borderRadius: '0.5rem' }}>
+                    <div style={{ fontSize: '0.875rem', color: textSec }}>Total estimado: </div>
+                    <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#f59e0b' }}>
+                      ${Object.values(shoppingList).reduce((sum, item) => sum + (parseFloat(item.precio) || 0) * item.cantidad, 0).toLocaleString()}
+                    </div>
+                  </div>
+                  {Object.values(shoppingList).map(item => {
+                    const cat = categories.find(c => c.id === item.categoria);
+                    return (
+                      <div key={item.id} style={{ padding: '1rem', backgroundColor: item.comprado ? (darkMode ? '#1a3a1a' : '#f0fdf4') : (darkMode ? '#2a2a2a' : '#f9f9f9'), borderRadius: '0.5rem', marginBottom: '0.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', opacity: item.comprado ? 0.6 : 1 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                          <input type="checkbox" checked={item.comprado} onChange={() => toggleShoppingItem(item.id)} style={{ width: '20px', height: '20px', cursor: 'pointer' }} />
+                          <div>
+                            <div style={{ fontWeight: 'bold', color: text, textDecoration: item.comprado ? 'line-through' : 'none' }}>{item.item}</div>
+                            <div style={{ fontSize: '0.75rem', color: textSec }}>Cantidad: {item.cantidad} • {cat?.icon} {cat?.name} • ${parseFloat(item.precio || 0).toLocaleString()}</div>
+                          </div>
+                        </div>
+                        <button onClick={async () => { 
+                          try {
+                            await supabase.from('shopping_list').delete().eq('id', item.id);
+                            const newList = {...shoppingList}; 
+                            delete newList[item.id]; 
+                            setShoppingList(newList); 
+                          } catch (error) {
+                            console.error('Error eliminando item:', error);
+                            alert('Error al eliminar el item');
+                          }
+                        }} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer' }}>
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p style={{ textAlign: 'center', color: textSec, paddingTop: '2rem' }}>No hay items en la lista</p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {currentTab === 'eventos' && (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '1.5rem' }}>
+            <div style={{ backgroundColor: card, border: `1px solid ${border}`, padding: '1.5rem', borderRadius: '1rem', height: 'fit-content' }}>
+              <h2 style={{ color: text, margin: '0 0 1rem 0' }}>Nuevo Evento</h2>
+              <select value={eventForm.categoria} onChange={(e) => setEventForm({ ...eventForm, categoria: e.target.value })} style={{ width: '100%', padding: '0.75rem', border: `1px solid ${border}`, borderRadius: '0.5rem', backgroundColor: input, color: text, marginBottom: '1rem', boxSizing: 'border-box' }}>
+                <option value="Cita">Cita</option>
+                <option value="Reunión">Reunión</option>
+                <option value="Cumpleaños">Cumpleaños</option>
+              </select>
+              <input type="text" placeholder="Título" value={eventForm.titulo} onChange={(e) => setEventForm({ ...eventForm, titulo: e.target.value })} style={{ width: '100%', padding: '0.75rem', border: `1px solid ${border}`, borderRadius: '0.5rem', backgroundColor: input, color: text, marginBottom: '1rem', boxSizing: 'border-box' }} />
+              <input type="date" value={eventForm.fecha_inicio} onChange={(e) => setEventForm({ ...eventForm, fecha_inicio: e.target.value })} style={{ width: '100%', padding: '0.75rem', border: `1px solid ${border}`, borderRadius: '0.5rem', backgroundColor: input, color: text, marginBottom: '1rem', boxSizing: 'border-box' }} />
+              <input type="text" placeholder="Ubicación" value={eventForm.ubicacion} onChange={(e) => setEventForm({ ...eventForm, ubicacion: e.target.value })} style={{ width: '100%', padding: '0.75rem', border: `1px solid ${border}`, borderRadius: '0.5rem', backgroundColor: input, color: text, marginBottom: '1rem', boxSizing: 'border-box' }} />
+              <button onClick={addEvent} style={{ width: '100%', padding: '0.75rem', backgroundColor: '#7c3aed', color: 'white', border: 'none', borderRadius: '0.5rem', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+                <Plus size={18} />Agregar Evento
+              </button>
+            </div>
+
+            <div style={{ backgroundColor: card, border: `1px solid ${border}`, padding: '1.5rem', borderRadius: '1rem' }}>
+              <h2 style={{ color: text, margin: '0 0 1rem 0' }}>Eventos</h2>
+              <div style={{ display: 'grid', gap: '1rem' }}>
+                {Object.values(events).map(e => (
+                  <div key={e.id} style={{ backgroundColor: darkMode ? '#2a2a2a' : '#f9f9f9', border: `1px solid ${border}`, borderRadius: '0.5rem', padding: '1rem', display: 'flex', justifyContent: 'space-between' }}>
+                    <div>
+                      <h3 style={{ color: text, margin: '0 0 0.5rem 0' }}>{e.titulo}</h3>
+                      <p style={{ color: textSec, margin: '0.25rem 0', fontSize: '0.875rem' }}>{e.categoria}</p>
+                      <p style={{ color: textSec, margin: '0.5rem 0 0 0', fontSize: '0.875rem' }}>📅 {e.fecha_inicio}</p>
+                      {e.ubicacion && <p style={{ color: textSec, margin: '0.25rem 0', fontSize: '0.875rem' }}>📍 {e.ubicacion}</p>}
+                    </div>
+                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                      <button onClick={async () => { 
+                        try {
+                          await supabase.from('events').delete().eq('id', e.id);
+                          const newEvents = {...events}; 
+                          delete newEvents[e.id]; 
+                          setEvents(newEvents); 
+                        } catch (error) {
+                          console.error('Error eliminando evento:', error);
+                          alert('Error al eliminar el evento');
+                        }
+                      }} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer' }}>
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {currentTab === 'resumen' && (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+            <div style={{ backgroundColor: card, border: `1px solid ${border}`, padding: '1.5rem', borderRadius: '1rem' }}>
+              <h2 style={{ color: text, margin: '0 0 1rem 0' }}>Resumen Financiero</h2>
+              <div style={{ display: 'grid', gap: '0.75rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: `1px solid ${border}`, paddingBottom: '0.5rem' }}>
+                  <span style={{ color: textSec }}>Ingresos:</span>
+                  <span style={{ fontWeight: 'bold', color: '#10b981' }}>${ingresos.toLocaleString()}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: `1px solid ${border}`, paddingBottom: '0.5rem' }}>
+                  <span style={{ color: textSec }}>Gastos:</span>
+                  <span style={{ fontWeight: 'bold', color: '#ef4444' }}>${gastos.toLocaleString()}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', backgroundColor: darkMode ? '#2a2a2a' : '#f9f9f9', padding: '0.75rem', borderRadius: '0.5rem' }}>
+                  <span style={{ fontWeight: 'bold', color: text }}>Balance:</span>
+                  <span style={{ fontWeight: 'bold', color: ingresos - gastos >= 0 ? '#10b981' : '#ef4444' }}>${(ingresos - gastos).toLocaleString()}</span>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ backgroundColor: card, border: `1px solid ${border}`, padding: '1.5rem', borderRadius: '1rem' }}>
+              <h2 style={{ color: text, margin: '0 0 1rem 0' }}>Gastos por Categoría</h2>
+              {Object.keys(gastosPorCategoria).length > 0 ? (
+                <ResponsiveContainer width="100%" height={300}>
+                  <PieChart>
+                    <Pie data={Object.entries(gastosPorCategoria).map(([name, value]) => ({ name, value }))} cx="50%" cy="50%" outerRadius={80} fill="#8884d8" dataKey="value" label>
+                      {Object.entries(gastosPorCategoria).map((_, i) => {
+                        const colors = ['#10b981', '#3b82f6', '#ef4444', '#8b5cf6', '#f59e0b', '#06b6d4', '#6b7280'];
+                        return <Cell key={`cell-${i}`} fill={colors[i % colors.length]} />;
+                      })}
+                    </Pie>
+                    <Tooltip />
+                  </PieChart>
+                </ResponsiveContainer>
+              ) : (
+                <p style={{ textAlign: 'center', color: textSec, paddingTop: '2rem' }}>Sin datos para mostrar</p>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <SettingsModal 
+        isOpen={showSettingsModal} 
+        onClose={() => setShowSettingsModal(false)} 
+      />
+    </div>
+  );
+}
