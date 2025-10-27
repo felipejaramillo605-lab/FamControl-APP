@@ -49,20 +49,32 @@ export const useSettingsStore = create(
           const { data: { user } } = await supabase.auth.getUser();
           if (!user) return false;
           
+          // IMPORTANTE: Incluir user_id para aislar datos por usuario
+          const settingsToSave = {
+            user_id: user.id,
+            app_name: newSettings.app_name,
+            currency: newSettings.currency,
+            thousands_separator: newSettings.thousands_separator,
+            color_primary: newSettings.color_primary,
+            color_secondary: newSettings.color_secondary,
+            color_accent: newSettings.color_accent,
+            updated_at: new Date().toISOString()
+          };
+          
           const { error } = await supabase
             .from('user_settings')
-            .upsert({
-              user_id: user.id,
-              ...newSettings,
-              updated_at: new Date().toISOString()
+            .upsert(settingsToSave, {
+              onConflict: 'user_id'
             });
           
           if (!error) {
             set({ settings: { ...get().settings, ...newSettings } });
             get().applyThemeColors(newSettings);
             return true;
+          } else {
+            console.error('Error updating settings:', error);
+            return false;
           }
-          return false;
         } catch (error) {
           console.error('Error saving settings:', error);
           return false;
@@ -223,20 +235,20 @@ export const useSettingsStore = create(
           if (!user) return false;
           
           const defaultSettings = {
+            user_id: user.id,
             app_name: 'FamControl v2',
             currency: 'COP',
             thousands_separator: true,
             color_primary: '#1976d2',
             color_secondary: '#424242',
-            color_accent: '#82B1FF'
+            color_accent: '#82B1FF',
+            updated_at: new Date().toISOString()
           };
           
           const { error } = await supabase
             .from('user_settings')
-            .upsert({
-              user_id: user.id,
-              ...defaultSettings,
-              updated_at: new Date().toISOString()
+            .upsert(defaultSettings, {
+              onConflict: 'user_id'
             });
           
           if (!error) {

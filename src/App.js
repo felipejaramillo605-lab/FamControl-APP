@@ -1,6 +1,7 @@
 import { useSettingsStore } from './stores/settings';
 import SettingsModal from './components/SettingsModal';
 import DailyQuote from './components/DailyQuote';
+import DashboardResumen from './components/DashboardResumen';
 import { supabase } from './supabaseClient';
 import React, { useState, useEffect } from 'react';
 import { Plus, Trash2, Edit2, LogOut, BarChart3, Calendar, DollarSign, Home, Moon, Sun, ShoppingCart, Wallet, TrendingUp, ArrowRightLeft, Download, Upload, Target, Star } from 'lucide-react';
@@ -689,8 +690,8 @@ export default function FamControl() {
     let gastos = monthTx
       .filter(t => t.tipo === 'gasto')
       .reduce((sum, t) => sum + (parseFloat(t.valor) || 0), 0);
-  
-    return ingresos - gastos;
+
+    return Math.round(ingresos - gastos);
   };
 
   const addAccount = async () => {
@@ -828,7 +829,13 @@ export default function FamControl() {
         gastosPorCategoria[cat?.name || t.categoria] = (gastosPorCategoria[cat?.name || t.categoria] || 0) + valor;
       }
     });
-    return { ingresos, gastos, gastosPorCategoria };
+    return { 
+      ingresos: Math.round(ingresos),
+      gastos: Math.round(gastos), 
+      gastosPorCategoria: Object.fromEntries(
+        Object.entries(gastosPorCategoria).map(([k, v]) => [k, Math.round(v)])
+      )
+    };
   };
 
   const getMonthlyTrend = () => {
@@ -840,7 +847,14 @@ export default function FamControl() {
       if (t.tipo === 'ingreso') data[month].ingresos += valor;
       else if (t.tipo === 'gasto') data[month].gastos += valor;
     });
-    return Object.values(data).sort((a, b) => a.month.localeCompare(b.month)).slice(-6);
+    return Object.values(data)
+      .sort((a, b) => a.month.localeCompare(b.month))
+      .slice(-6)
+      .map(item => ({
+        ...item,
+        ingresos: Math.round(item.ingresos),
+        gastos: Math.round(item.gastos)
+      }));
   };
 
   const getBudgetStatus = () => {
@@ -890,7 +904,11 @@ export default function FamControl() {
 
   // Función para formatear números con separadores de miles
   const formatNumber = (number) => {
-    const useSeparator = settingsStore.settings?.thousands_separator !== false;
+    // Validar que sea un número válido
+    if (typeof number !== 'number' || isNaN(number)) {
+      return '0';
+    }
+    const useSeparator = settingsStore?.settings?.thousands_separator !== false;
     return useSeparator ? number.toLocaleString('es-CO') : number.toString();
   };
 
@@ -1474,7 +1492,7 @@ export default function FamControl() {
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
                         <span style={{ fontWeight: 'bold', color: t.tipo === 'ingreso' ? '#10b981' : '#ef4444' }}>
-                          {t.tipo === 'ingreso' ? '+' : '-'}${formatNumber(parseFloat(t.valor))}
+                          {t.tipo === 'ingreso' ? '+' : '-'}${formatNumber(Math.round(parseFloat(t.valor) || 0))}
                         </span>
                         <button onClick={async () => { 
                           try {
@@ -1987,53 +2005,12 @@ export default function FamControl() {
         )}
 
         {currentTab === 'resumen' && (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
-            <div style={{ backgroundColor: card, border: `1px solid ${border}`, padding: '1.5rem', borderRadius: '1rem' }}>
-              <h2 style={{ color: text, margin: '0 0 1rem 0' }}>Resumen Financiero</h2>
-              <div style={{ display: 'grid', gap: '0.75rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: `1px solid ${border}`, paddingBottom: '0.5rem' }}>
-                  <span style={{ color: textSec }}>Ingresos:</span>
-                  <span style={{ fontWeight: 'bold', color: '#10b981' }}>${formatNumber(ingresos)}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: `1px solid ${border}`, paddingBottom: '0.5rem' }}>
-                  <span style={{ color: textSec }}>Gastos:</span>
-                  <span style={{ fontWeight: 'bold', color: '#ef4444' }}>${formatNumber(gastos)}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', backgroundColor: darkMode ? '#2a2a2a' : '#f9f9f9', padding: '0.75rem', borderRadius: '0.5rem' }}>
-                  <span style={{ fontWeight: 'bold', color: text }}>Balance:</span>
-                  <span style={{ fontWeight: 'bold', color: ingresos - gastos >= 0 ? '#10b981' : '#ef4444' }}>${formatNumber(ingresos - gastos)}</span>
-                </div>
-              </div>
-            </div>
-
-            <div style={{ backgroundColor: card, border: `1px solid ${border}`, padding: '1.5rem', borderRadius: '1rem' }}>
-              <h2 style={{ color: text, margin: '0 0 1rem 0' }}>Gastos por Categoría</h2>
-              {Object.keys(gastosPorCategoria).length > 0 ? (
-                <ResponsiveContainer width="100%" height={300}>
-                  <PieChart>
-                    <Pie 
-                      data={Object.entries(gastosPorCategoria).map(([name, value]) => ({ name, value }))} 
-                      cx="50%" 
-                      cy="50%" 
-                      outerRadius={80} 
-                      fill="#8884d8" 
-                      dataKey="value" 
-                      label={({ name, value }) => `${name}: $${formatNumber(value)}`}
-                    >
-                      {Object.entries(gastosPorCategoria).map((_, i) => {
-                        const colors = ['#10b981', '#3b82f6', '#ef4444', '#8b5cf6', '#f59e0b', '#06b6d4', '#6b7280'];
-                        return <Cell key={`cell-${i}`} fill={colors[i % colors.length]} />;
-                      })}
-                    </Pie>
-                    <Tooltip formatter={(value) => `$${formatNumber(value)}`} />
-                    <Legend />
-                  </PieChart>
-                </ResponsiveContainer>
-              ) : (
-                <p style={{ textAlign: 'center', color: textSec, paddingTop: '2rem' }}>Sin datos para mostrar</p>
-              )}
-            </div>
-          </div>
+          <DashboardResumen 
+            transactions={Object.values(transactions)}
+            accounts={accounts}
+            goals={Object.values(goals)}
+            budgets={Object.values(budgets)}
+          />
         )}
       </div>
 
