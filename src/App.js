@@ -4,14 +4,14 @@ import DailyQuote from './components/DailyQuote';
 import { supabase } from './supabaseClient';
 import React, { useState, useEffect } from 'react';
 import { Plus, Trash2, Edit2, LogOut, BarChart3, Calendar, DollarSign, Home, Moon, Sun, ShoppingCart, Wallet, TrendingUp, ArrowRightLeft, Download, Upload, Target, Star } from 'lucide-react';
-import { PieChart, Pie, BarChart, Bar, ResponsiveContainer, Cell, Tooltip, XAxis, YAxis } from 'recharts';
+import { PieChart, Pie, BarChart, Bar, ResponsiveContainer, Cell, Tooltip, XAxis, YAxis, Legend } from 'recharts';
 
 const DEFAULT_CATEGORIES = [
   { id: 'alimentacion', name: 'Alimentación', icon: '🍔', color: '#ef4444' },
   { id: 'transporte', name: 'Transporte', icon: '🚗', color: '#3b82f6' },
   { id: 'entretenimiento', name: 'Entretenimiento', icon: '🎬', color: '#8b5cf6' },
   { id: 'salud', name: 'Salud', icon: '⚕️', color: '#10b981' },
-  { id: 'educacion', name: 'Educación', icon: '📚', color: '#f59e0b' }, // Corregido: era "educ CLO"
+  { id: 'educacion', name: 'Educación', icon: '📚', color: '#f59e0b' },
   { id: 'servicios', name: 'Servicios', icon: '💡', color: '#06b6d4' },
   { id: 'compras', name: 'Compras', icon: '🛍️', color: '#ec4899' },
   { id: 'otros', name: 'Otros', icon: '📦', color: '#6b7280' }
@@ -152,7 +152,8 @@ export default function FamControl() {
     if (typeof window === 'undefined') return;
     
     settingsStore.loadSettings();
-    settingsStore.loadRandomQuote();
+    // Cambiado a loadDailyQuote para prevenir ciclos infinitos
+    settingsStore.loadDailyQuote();
   }, [settingsStore]);
 
   const debugSync = async (userId) => {
@@ -826,7 +827,7 @@ export default function FamControl() {
   };
 
   const getBudgetStatus = () => {
-    const currentMonth = new Date().toISOString().slice(0, 7); // Corregido: era " currentMonth"
+    const currentMonth = new Date().toISOString().slice(0, 7);
     const monthTx = Object.values(transactions).filter(t => t.fecha.startsWith(currentMonth) && t.tipo === 'gasto');
     return categories.map(cat => {
       const budget = budgets[`${cat.id}-${currentMonth}`];
@@ -869,6 +870,12 @@ export default function FamControl() {
     }
     return sum + saldo;
   }, 0);
+
+  // Función para formatear números con separadores de miles
+  const formatNumber = (number) => {
+    const useSeparator = settingsStore.settings.thousands_separator !== false;
+    return useSeparator ? number.toLocaleString('es-CO') : number.toString();
+  };
 
   const bg = darkMode ? '#0a0a0a' : '#f5f5f5';
   const card = darkMode ? '#1a1a1a' : '#ffffff';
@@ -987,19 +994,19 @@ export default function FamControl() {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1.5rem', marginBottom: '1.5rem' }}>
               <div style={{ backgroundColor: card, border: `1px solid ${border}`, padding: '1.5rem', borderRadius: '1rem' }}>
                 <p style={{ color: textSec, fontSize: '0.875rem', margin: '0 0 0.5rem 0' }}>Balance Total</p>
-                <p style={{ fontSize: '2rem', fontWeight: 'bold', margin: 0, color: totalBalance >= 0 ? '#10b981' : '#ef4444' }}>${totalBalance.toLocaleString()}</p>
+                <p style={{ fontSize: '2rem', fontWeight: 'bold', margin: 0, color: totalBalance >= 0 ? '#10b981' : '#ef4444' }}>${formatNumber(totalBalance)}</p>
               </div>
               <div style={{ backgroundColor: card, border: `1px solid ${border}`, padding: '1.5rem', borderRadius: '1rem' }}>
                 <p style={{ color: textSec, fontSize: '0.875rem', margin: '0 0 0.5rem 0' }}>Ingresos (mes)</p>
-                <p style={{ fontSize: '2rem', fontWeight: 'bold', margin: 0, color: '#10b981' }}>${ingresos.toLocaleString()}</p>
+                <p style={{ fontSize: '2rem', fontWeight: 'bold', margin: 0, color: '#10b981' }}>${formatNumber(ingresos)}</p>
               </div>
               <div style={{ backgroundColor: card, border: `1px solid ${border}`, padding: '1.5rem', borderRadius: '1rem' }}>
                 <p style={{ color: textSec, fontSize: '0.875rem', margin: '0 0 0.5rem 0' }}>Gastos (mes)</p>
-                <p style={{ fontSize: '2rem', fontWeight: 'bold', margin: 0, color: '#ef4444' }}>${gastos.toLocaleString()}</p>
+                <p style={{ fontSize: '2rem', fontWeight: 'bold', margin: 0, color: '#ef4444' }}>${formatNumber(gastos)}</p>
               </div>
               <div style={{ backgroundColor: card, border: `1px solid ${border}`, padding: '1.5rem', borderRadius: '1rem' }}>
                 <p style={{ color: textSec, fontSize: '0.875rem', margin: '0 0 0.5rem 0' }}>Ahorro Mensual</p>
-                <p style={{ fontSize: '2rem', fontWeight: 'bold', margin: 0, color: monthlySavings >= 0 ? '#10b981' : '#ef4444' }}>${monthlySavings.toLocaleString()}</p>
+                <p style={{ fontSize: '2rem', fontWeight: 'bold', margin: 0, color: monthlySavings >= 0 ? '#10b981' : '#ef4444' }}>${formatNumber(monthlySavings)}</p>
               </div>
             </div>
 
@@ -1009,10 +1016,17 @@ export default function FamControl() {
                 <ResponsiveContainer width="100%" height={250}>
                   <BarChart data={monthlyTrend}>
                     <XAxis dataKey="month" stroke={textSec} />
-                    <YAxis stroke={textSec} />
-                    <Tooltip />
-                    <Bar dataKey="ingresos" fill="#10b981" />
-                    <Bar dataKey="gastos" fill="#ef4444" />
+                    <YAxis 
+                      stroke={textSec} 
+                      tickFormatter={(value) => `$${formatNumber(value)}`}
+                    />
+                    <Tooltip 
+                      formatter={(value) => [`$${formatNumber(value)}`, 'Valor']}
+                      labelFormatter={(label) => `Mes: ${label}`}
+                    />
+                    <Legend />
+                    <Bar dataKey="ingresos" fill="#10b981" name="Ingresos" />
+                    <Bar dataKey="gastos" fill="#ef4444" name="Gastos" />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -1022,7 +1036,7 @@ export default function FamControl() {
                 {accounts.map(acc => (
                   <div key={acc.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '1rem', backgroundColor: darkMode ? '#2a2a2a' : '#f9f9f9', borderRadius: '0.5rem', marginBottom: '0.5rem' }}>
                     <span style={{ color: text }}>{acc.icon} {acc.name}</span>
-                    <span style={{ fontWeight: 'bold', color: acc.saldo >= 0 ? '#10b981' : '#ef4444' }}>${(acc.saldo || 0).toLocaleString()}</span>
+                    <span style={{ fontWeight: 'bold', color: acc.saldo >= 0 ? '#10b981' : '#ef4444' }}>${formatNumber(acc.saldo || 0)}</span>
                   </div>
                 ))}
               </div>
@@ -1056,7 +1070,7 @@ export default function FamControl() {
                             }}></div>
                           </div>
                           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.875rem', color: textSec }}>
-                            <span>${progress.saved.toLocaleString()} / ${progress.target.toLocaleString()}</span>
+                            <span>${formatNumber(progress.saved)} / ${formatNumber(progress.target)}</span>
                             <span>{progress.percentage.toFixed(0)}%</span>
                           </div>
                           {progress.percentage >= 100 && (
@@ -1287,7 +1301,7 @@ export default function FamControl() {
                             <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>{acc.icon}</div>
                             <h3 style={{ color: text, margin: '0 0 0.5rem 0' }}>{acc.name}</h3>
                             <p style={{ fontSize: '1.75rem', fontWeight: 'bold', margin: 0, color: acc.saldo >= 0 ? '#10b981' : '#ef4444' }}>
-                              ${(acc.saldo || 0).toLocaleString()}
+                              ${formatNumber(acc.saldo || 0)}
                             </p>
                           </div>
                         ))}
@@ -1329,7 +1343,7 @@ export default function FamControl() {
                               {Object.values(ACCOUNT_CATEGORIES.debito.types).find(t => t.id === acc.tipo)?.name}
                             </p>
                             <p style={{ fontSize: '1.75rem', fontWeight: 'bold', margin: 0, color: '#10b981' }}>
-                              +${(acc.saldo || 0).toLocaleString()}
+                              +${formatNumber(acc.saldo || 0)}
                             </p>
                           </div>
                         ))}
@@ -1371,7 +1385,7 @@ export default function FamControl() {
                               {Object.values(ACCOUNT_CATEGORIES.credito.types).find(t => t.id === acc.tipo)?.name}
                             </p>
                             <p style={{ fontSize: '1.75rem', fontWeight: 'bold', margin: 0, color: '#ef4444' }}>
-                              ${(acc.saldo || 0).toLocaleString()}
+                              ${formatNumber(acc.saldo || 0)}
                             </p>
                           </div>
                         ))}
@@ -1443,7 +1457,7 @@ export default function FamControl() {
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
                         <span style={{ fontWeight: 'bold', color: t.tipo === 'ingreso' ? '#10b981' : '#ef4444' }}>
-                          {t.tipo === 'ingreso' ? '+' : '-'}${parseFloat(t.valor).toLocaleString()}
+                          {t.tipo === 'ingreso' ? '+' : '-'}${formatNumber(parseFloat(t.valor))}
                         </span>
                         <button onClick={async () => { 
                           try {
@@ -1554,8 +1568,8 @@ export default function FamControl() {
                           <div style={{ width: `${b.porcentaje}%`, height: '100%', backgroundColor: b.alerta ? '#ef4444' : b.color, transition: 'width 0.3s' }}></div>
                         </div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.875rem', color: textSec }}>
-                          <span>Gastado: ${b.gastado.toLocaleString()}</span>
-                          <span>Presupuesto: ${b.presupuesto.toLocaleString()}</span>
+                          <span>Gastado: ${formatNumber(b.gastado)}</span>
+                          <span>Presupuesto: ${formatNumber(b.presupuesto)}</span>
                         </div>
                         {b.alerta && <div style={{ marginTop: '0.5rem', padding: '0.5rem', backgroundColor: '#fef2f2', color: '#ef4444', borderRadius: '0.25rem', fontSize: '0.75rem', fontWeight: '600' }}>⚠️ Alerta: Has superado el 80% del presupuesto</div>}
                       </div>
@@ -1734,13 +1748,13 @@ export default function FamControl() {
                 <div>
                   <div style={{ fontSize: '0.875rem', color: textSec }}>Ahorro mensual disponible</div>
                   <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: monthlySavings >= 0 ? '#10b981' : '#ef4444' }}>
-                    ${monthlySavings.toLocaleString()}
+                    ${formatNumber(monthlySavings)}
                   </div>
                 </div>
                 <div style={{ fontSize: '0.875rem', color: textSec, textAlign: 'right' }}>
                   <div>Total en metas activas:</div>
                   <div style={{ fontWeight: 'bold', color: text }}>
-                    ${Object.values(goals).reduce((sum, goal) => sum + (parseFloat(goal.target_amount) || 0), 0).toLocaleString()}
+                    ${formatNumber(Object.values(goals).reduce((sum, goal) => sum + (parseFloat(goal.target_amount) || 0), 0))}
                   </div>
                 </div>
               </div>
@@ -1789,8 +1803,8 @@ export default function FamControl() {
                         </div>
                         
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.875rem', color: textSec, marginBottom: '0.5rem' }}>
-                          <span>${progress.saved.toLocaleString()}</span>
-                          <span>${progress.target.toLocaleString()}</span>
+                          <span>${formatNumber(progress.saved)}</span>
+                          <span>${formatNumber(progress.target)}</span>
                         </div>
                         
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
@@ -1798,7 +1812,7 @@ export default function FamControl() {
                             {progress.percentage.toFixed(0)}% completado
                           </span>
                           <span style={{ fontSize: '0.875rem', color: textSec }}>
-                            ${progress.remaining.toLocaleString()} restantes
+                            ${formatNumber(progress.remaining)} restantes
                           </span>
                         </div>
 
@@ -1867,7 +1881,7 @@ export default function FamControl() {
                   <div style={{ marginBottom: '1rem', padding: '0.75rem', backgroundColor: darkMode ? '#2a2a2a' : '#f9f9f9', borderRadius: '0.5rem' }}>
                     <div style={{ fontSize: '0.875rem', color: textSec }}>Total estimado: </div>
                     <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#f59e0b' }}>
-                      ${Object.values(shoppingList).reduce((sum, item) => sum + (parseFloat(item.precio) || 0) * item.cantidad, 0).toLocaleString()}
+                      ${formatNumber(Object.values(shoppingList).reduce((sum, item) => sum + (parseFloat(item.precio) || 0) * item.cantidad, 0))}
                     </div>
                   </div>
                   {Object.values(shoppingList).map(item => {
@@ -1878,7 +1892,7 @@ export default function FamControl() {
                           <input type="checkbox" checked={item.comprado} onChange={() => toggleShoppingItem(item.id)} style={{ width: '20px', height: '20px', cursor: 'pointer' }} />
                           <div>
                             <div style={{ fontWeight: 'bold', color: text, textDecoration: item.comprado ? 'line-through' : 'none' }}>{item.item}</div>
-                            <div style={{ fontSize: '0.75rem', color: textSec }}>Cantidad: {item.cantidad} • {cat?.icon} {cat?.name} • ${parseFloat(item.precio || 0).toLocaleString()}</div>
+                            <div style={{ fontSize: '0.75rem', color: textSec }}>Cantidad: {item.cantidad} • {cat?.icon} {cat?.name} • ${formatNumber(parseFloat(item.precio || 0))}</div>
                           </div>
                         </div>
                         <button onClick={async () => { 
@@ -1962,15 +1976,15 @@ export default function FamControl() {
               <div style={{ display: 'grid', gap: '0.75rem' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: `1px solid ${border}`, paddingBottom: '0.5rem' }}>
                   <span style={{ color: textSec }}>Ingresos:</span>
-                  <span style={{ fontWeight: 'bold', color: '#10b981' }}>${ingresos.toLocaleString()}</span>
+                  <span style={{ fontWeight: 'bold', color: '#10b981' }}>${formatNumber(ingresos)}</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: `1px solid ${border}`, paddingBottom: '0.5rem' }}>
                   <span style={{ color: textSec }}>Gastos:</span>
-                  <span style={{ fontWeight: 'bold', color: '#ef4444' }}>${gastos.toLocaleString()}</span>
+                  <span style={{ fontWeight: 'bold', color: '#ef4444' }}>${formatNumber(gastos)}</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', backgroundColor: darkMode ? '#2a2a2a' : '#f9f9f9', padding: '0.75rem', borderRadius: '0.5rem' }}>
                   <span style={{ fontWeight: 'bold', color: text }}>Balance:</span>
-                  <span style={{ fontWeight: 'bold', color: ingresos - gastos >= 0 ? '#10b981' : '#ef4444' }}>${(ingresos - gastos).toLocaleString()}</span>
+                  <span style={{ fontWeight: 'bold', color: ingresos - gastos >= 0 ? '#10b981' : '#ef4444' }}>${formatNumber(ingresos - gastos)}</span>
                 </div>
               </div>
             </div>
@@ -1980,13 +1994,22 @@ export default function FamControl() {
               {Object.keys(gastosPorCategoria).length > 0 ? (
                 <ResponsiveContainer width="100%" height={300}>
                   <PieChart>
-                    <Pie data={Object.entries(gastosPorCategoria).map(([name, value]) => ({ name, value }))} cx="50%" cy="50%" outerRadius={80} fill="#8884d8" dataKey="value" label>
+                    <Pie 
+                      data={Object.entries(gastosPorCategoria).map(([name, value]) => ({ name, value }))} 
+                      cx="50%" 
+                      cy="50%" 
+                      outerRadius={80} 
+                      fill="#8884d8" 
+                      dataKey="value" 
+                      label={({ name, value }) => `${name}: $${formatNumber(value)}`}
+                    >
                       {Object.entries(gastosPorCategoria).map((_, i) => {
                         const colors = ['#10b981', '#3b82f6', '#ef4444', '#8b5cf6', '#f59e0b', '#06b6d4', '#6b7280'];
                         return <Cell key={`cell-${i}`} fill={colors[i % colors.length]} />;
                       })}
                     </Pie>
-                    <Tooltip />
+                    <Tooltip formatter={(value) => `$${formatNumber(value)}`} />
+                    <Legend />
                   </PieChart>
                 </ResponsiveContainer>
               ) : (
