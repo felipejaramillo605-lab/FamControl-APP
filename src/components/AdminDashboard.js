@@ -333,7 +333,7 @@ const AdminDashboard = ({ onClose, darkMode }) => {
                               border: 'none',
                               borderRadius: '0.5rem',
                               cursor: 'pointer',
-                              fontSize: '0.8rem',
+                              fontSize: '0.875rem',
                               fontWeight: '600',
                               display: 'flex',
                               alignItems: 'center',
@@ -344,7 +344,7 @@ const AdminDashboard = ({ onClose, darkMode }) => {
                             onMouseOut={(e) => e.target.style.backgroundColor = '#3b82f6'}
                             title="Enviar email de recuperación de contraseña"
                           >
-                            <Key size={12} /> Enviar email de recuperación
+                            <Key size={14} /> Enviar email de recuperación
                           </button>
                         )}
                       </div>

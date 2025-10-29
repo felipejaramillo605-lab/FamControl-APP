@@ -186,6 +186,11 @@ export default function FamControl() {
     initializeSettings();
   }, [settingsStore]);
 
+  // 🔥 AGREGAR ESTE NUEVO useEffect PARA DEBUG DEL USERROLE
+  useEffect(() => {
+    console.log('🔄 Estado userRole actualizado:', userRole);
+  }, [userRole]);
+
   const debugSync = async (userId) => {
     console.log('🔍 DEBUG Sincronización');
     
@@ -331,6 +336,10 @@ export default function FamControl() {
       
       console.log('🔄 Cargando datos para usuario:', userId);
       
+      // DEBUG: Verificar el usuario actual
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      console.log('🔍 Usuario autenticado:', currentUser?.email);
+      
       const { data: accountsData, error: accountsError } = await supabase
         .from('accounts')
         .select('*')
@@ -449,20 +458,29 @@ export default function FamControl() {
         setGoals(goalsObj);
       }
 
-      // Verificar si el usuario es admin (puedes definir una lista de emails admin)
+      // Cargar el rol del usuario desde user_profiles
       const { data: profileData, error: profileError } = await supabase
         .from('user_profiles')
         .select('role')
         .eq('id', userId)
         .single();
+
+      console.log('🔍 Resultado de user_profiles:', profileData);
+      console.log('🔍 Error de user_profiles:', profileError);
+
       if (profileError) {
-        console.error('Error cargando perfil:', profileError);
-        setUserRole('user'); // Por defecto, usuario normal
+        console.error('❌ Error cargando perfil:', profileError);
+        setUserRole('user');
       } else {
         setUserRole(profileData?.role || 'user');
-        console.log('👤 Rol de usuario:', profileData?.role);
+        console.log('✅ Rol de usuario establecido:', profileData?.role);
       }
-      
+
+      // TEMPORAL: Forzar admin para felipejaramillo605@gmail.com
+      if (currentUser?.email === 'felipejaramillo605@gmail.com') {
+        console.log('🔧 TEMPORAL: Forzando rol admin para felipejaramillo605@gmail.com');
+        setUserRole('admin');
+      }
 
       console.log('🎉 Todos los datos cargados exitosamente');
 
@@ -1192,6 +1210,9 @@ export default function FamControl() {
           >
             ⚙️
           </button>
+
+          {/* 🔥 AGREGAR ESTE DEBUG TEMPORAL */}
+          {console.log('🎯 Debug Header - userRole:', userRole, 'should show admin button:', userRole === 'admin')}
 
           {/* Botón de administración para usuarios admin */}
           {userRole === 'admin' && (
