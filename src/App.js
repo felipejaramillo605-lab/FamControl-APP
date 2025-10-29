@@ -7,6 +7,9 @@ import React, { useState, useEffect } from 'react';
 import { Plus, Trash2, Edit2, LogOut, BarChart3, Calendar, DollarSign, Home, Moon, Sun, ShoppingCart, Wallet, TrendingUp, ArrowRightLeft, Download, Upload, Target, Star } from 'lucide-react';
 import { PieChart, Pie, BarChart, Bar, ResponsiveContainer, Cell, Tooltip, XAxis, YAxis, Legend } from 'recharts';
 
+// Importar el componente AdminDashboard
+import AdminDashboard from './components/AdminDashboard';
+
 const DEFAULT_CATEGORIES = [
   { id: 'alimentacion', name: 'Alimentación', icon: '🍔', color: '#ef4444' },
   { id: 'transporte', name: 'Transporte', icon: '🚗', color: '#3b82f6' },
@@ -54,6 +57,15 @@ export default function FamControl() {
   const [loginPassword, setLoginPassword] = useState('');
   const [registerMode, setRegisterMode] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
+
+  // Nuevos estados para el restablecimiento de contraseña
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetMessage, setResetMessage] = useState('');
+
+  // Estados para el panel de administración
+  const [showAdminDashboard, setShowAdminDashboard] = useState(false);
+  const [userRole, setUserRole] = useState('user'); // 'user' o 'admin'
 
   const [categories] = useState(DEFAULT_CATEGORIES);
   const [accounts, setAccounts] = useState(DEFAULT_ACCOUNTS);
@@ -205,6 +217,31 @@ export default function FamControl() {
     }
   };
 
+  // Función para manejar el restablecimiento de contraseña
+  const handleForgotPassword = async () => {
+    if (!resetEmail) {
+      alert('Por favor ingresa tu email');
+      return;
+    }
+
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(resetEmail, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+      
+      if (error) throw error;
+      
+      setResetMessage('Se ha enviado un correo para restablecer tu contraseña');
+      setTimeout(() => {
+        setShowForgotPassword(false);
+        setResetEmail('');
+        setResetMessage('');
+      }, 3000);
+    } catch (error) {
+      alert('Error: ' + error.message);
+    }
+  };
+
   const handleLogin = async () => {
     if (!loginEmail || !loginPassword) {
       alert('Por favor completa todos los campos');
@@ -213,9 +250,17 @@ export default function FamControl() {
 
     try {
       if (registerMode) {
+        // Configuración para no requerir verificación de email
         const { data, error } = await supabase.auth.signUp({
           email: loginEmail,
           password: loginPassword,
+          options: {
+            // Esto evita que se envíe el email de confirmación
+            emailRedirectTo: `${window.location.origin}`,
+            data: {
+              email_confirm: false
+            }
+          }
         });
         
         if (error) {
@@ -223,10 +268,31 @@ export default function FamControl() {
           return;
         }
         
-        alert('Registro exitoso! Ya puedes iniciar sesión');
-        setRegisterMode(false);
-        setLoginEmail('');
-        setLoginPassword('');
+        // Iniciar sesión automáticamente después del registro
+        if (data.user) {
+          const { error: signInError } = await supabase.auth.signInWithPassword({
+            email: loginEmail,
+            password: loginPassword,
+          });
+          
+          if (signInError) {
+            alert('Registro exitoso, pero error al iniciar sesión: ' + signInError.message);
+            return;
+          }
+          
+          setUser(loginEmail);
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('famcontrol_current_user', loginEmail);
+          }
+          const { data: { user: currentUser } } = await supabase.auth.getUser();
+          if (currentUser) {
+            await loadUserData(currentUser.id);
+          }
+          await checkSupabaseConnection();
+        } else {
+          alert('Registro exitoso! Ya puedes iniciar sesión');
+          setRegisterMode(false);
+        }
         
       } else {
         const { data, error } = await supabase.auth.signInWithPassword({
@@ -382,6 +448,21 @@ export default function FamControl() {
         console.log('✅ Metas cargadas:', Object.keys(goalsObj).length);
         setGoals(goalsObj);
       }
+
+      // Verificar si el usuario es admin (puedes definir una lista de emails admin)
+      const { data: profileData, error: profileError } = await supabase
+        .from('user_profiles')
+        .select('role')
+        .eq('id', userId)
+        .single();
+      if (profileError) {
+        console.error('Error cargando perfil:', profileError);
+        setUserRole('user'); // Por defecto, usuario normal
+      } else {
+        setUserRole(profileData?.role || 'user');
+        console.log('👤 Rol de usuario:', profileData?.role);
+      }
+      
 
       console.log('🎉 Todos los datos cargados exitosamente');
 
@@ -928,16 +1009,159 @@ export default function FamControl() {
               {darkMode ? <Sun size={20} color="#fbbf24" /> : <Moon size={20} color="#666" />}
             </button>
           </div>
-          <h1 style={{ fontSize: '2rem', fontWeight: 'bold', textAlign: 'center', color: text, margin: '0 0 0.5rem 0' }}>FamControl v2</h1>
-          <p style={{ textAlign: 'center', color: textSec, margin: '0 0 2rem 0' }}>Gestiona tus finanzas familiares</p>
-          <input type="email" placeholder="Email" value={loginEmail} onChange={(e) => setLoginEmail(e.target.value)} style={{ width: '100%', padding: '0.75rem', border: `1px solid ${border}`, borderRadius: '0.5rem', backgroundColor: input, color: text, marginBottom: '1rem', boxSizing: 'border-box' }} />
-          <input type="password" placeholder="Contraseña" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} style={{ width: '100%', padding: '0.75rem', border: `1px solid ${border}`, borderRadius: '0.5rem', backgroundColor: input, color: text, marginBottom: '1.5rem', boxSizing: 'border-box' }} />
-          <button onClick={handleLogin} style={{ width: '100%', padding: '0.75rem', backgroundColor: '#2563eb', color: 'white', border: 'none', borderRadius: '0.5rem', fontWeight: '600', cursor: 'pointer', marginBottom: '1rem' }}>
-            {registerMode ? 'Registrarse' : 'Iniciar Sesión'}
-          </button>
-          <button onClick={() => setRegisterMode(!registerMode)} style={{ width: '100%', padding: '0.75rem', backgroundColor: 'transparent', color: '#2563eb', border: 'none', borderRadius: '0.5rem', fontWeight: '600', cursor: 'pointer' }}>
-            {registerMode ? 'Volver al login' : '¿No tienes cuenta? Regístrate'}
-          </button>
+
+          {!showForgotPassword ? (
+            <>
+              <h1 style={{ fontSize: '2rem', fontWeight: 'bold', textAlign: 'center', color: text, margin: '0 0 0.5rem 0' }}>FamControl v2</h1>
+              <p style={{ textAlign: 'center', color: textSec, margin: '0 0 2rem 0' }}>Gestiona tus finanzas familiares</p>
+              
+              <input 
+                type="email" 
+                placeholder="Email" 
+                value={loginEmail} 
+                onChange={(e) => setLoginEmail(e.target.value)} 
+                style={{ width: '100%', padding: '0.75rem', border: `1px solid ${border}`, borderRadius: '0.5rem', backgroundColor: input, color: text, marginBottom: '1rem', boxSizing: 'border-box' }} 
+              />
+              
+              <input 
+                type="password" 
+                placeholder="Contraseña" 
+                value={loginPassword} 
+                onChange={(e) => setLoginPassword(e.target.value)} 
+                onKeyPress={(e) => e.key === 'Enter' && handleLogin()}
+                style={{ width: '100%', padding: '0.75rem', border: `1px solid ${border}`, borderRadius: '0.5rem', backgroundColor: input, color: text, marginBottom: '0.5rem', boxSizing: 'border-box' }} 
+              />
+              
+              {!registerMode && (
+                <button 
+                  onClick={() => setShowForgotPassword(true)} 
+                  style={{ 
+                    width: '100%', 
+                    padding: '0.5rem', 
+                    backgroundColor: 'transparent', 
+                    color: '#2563eb', 
+                    border: 'none', 
+                    textAlign: 'right',
+                    cursor: 'pointer',
+                    fontSize: '0.875rem',
+                    marginBottom: '1rem'
+                  }}
+                >
+                  ¿Olvidaste tu contraseña?
+                </button>
+              )}
+              
+              <button 
+                onClick={handleLogin} 
+                style={{ 
+                  width: '100%', 
+                  padding: '0.75rem', 
+                  backgroundColor: '#2563eb', 
+                  color: 'white', 
+                  border: 'none', 
+                  borderRadius: '0.5rem', 
+                  fontWeight: '600', 
+                  cursor: 'pointer', 
+                  marginBottom: '1rem',
+                  marginTop: !registerMode ? '0' : '1rem'
+                }}
+              >
+                {registerMode ? 'Registrarse' : 'Iniciar Sesión'}
+              </button>
+              
+              <button 
+                onClick={() => setRegisterMode(!registerMode)} 
+                style={{ 
+                  width: '100%', 
+                  padding: '0.75rem', 
+                  backgroundColor: 'transparent', 
+                  color: '#2563eb', 
+                  border: 'none', 
+                  borderRadius: '0.5rem', 
+                  fontWeight: '600', 
+                  cursor: 'pointer' 
+                }}
+              >
+                {registerMode ? 'Volver al login' : '¿No tienes cuenta? Regístrate'}
+              </button>
+            </>
+          ) : (
+            <>
+              <h2 style={{ fontSize: '1.5rem', fontWeight: 'bold', color: text, margin: '0 0 1rem 0' }}>
+                Restablecer Contraseña
+              </h2>
+              <p style={{ color: textSec, fontSize: '0.875rem', margin: '0 0 1.5rem 0' }}>
+                Ingresa tu email y te enviaremos un enlace para restablecer tu contraseña
+              </p>
+              
+              {resetMessage && (
+                <div style={{ 
+                  padding: '0.75rem', 
+                  backgroundColor: '#d1fae5', 
+                  color: '#065f46', 
+                  borderRadius: '0.5rem', 
+                  marginBottom: '1rem',
+                  fontSize: '0.875rem'
+                }}>
+                  {resetMessage}
+                </div>
+              )}
+              
+              <input 
+                type="email" 
+                placeholder="Email" 
+                value={resetEmail} 
+                onChange={(e) => setResetEmail(e.target.value)} 
+                style={{ 
+                  width: '100%', 
+                  padding: '0.75rem', 
+                  border: `1px solid ${border}`, 
+                  borderRadius: '0.5rem', 
+                  backgroundColor: input, 
+                  color: text, 
+                  marginBottom: '1rem', 
+                  boxSizing: 'border-box' 
+                }} 
+              />
+              
+              <button 
+                onClick={handleForgotPassword} 
+                style={{ 
+                  width: '100%', 
+                  padding: '0.75rem', 
+                  backgroundColor: '#2563eb', 
+                  color: 'white', 
+                  border: 'none', 
+                  borderRadius: '0.5rem', 
+                  fontWeight: '600', 
+                  cursor: 'pointer', 
+                  marginBottom: '0.5rem' 
+                }}
+              >
+                Enviar enlace
+              </button>
+              
+              <button 
+                onClick={() => {
+                  setShowForgotPassword(false);
+                  setResetEmail('');
+                  setResetMessage('');
+                }} 
+                style={{ 
+                  width: '100%', 
+                  padding: '0.75rem', 
+                  backgroundColor: 'transparent', 
+                  color: '#6b7280', 
+                  border: 'none', 
+                  borderRadius: '0.5rem', 
+                  fontWeight: '600', 
+                  cursor: 'pointer' 
+                }}
+              >
+                Volver al login
+              </button>
+            </>
+          )}
         </div>
       </div>
     );
@@ -968,6 +1192,23 @@ export default function FamControl() {
           >
             ⚙️
           </button>
+
+          {/* Botón de administración para usuarios admin */}
+          {userRole === 'admin' && (
+            <button
+              onClick={() => setShowAdminDashboard(true)}
+              style={{
+                padding: '0.5rem',
+                borderRadius: '0.5rem',
+                border: 'none',
+                backgroundColor: darkMode ? '#333' : '#f0f0f0',
+                cursor: 'pointer'
+              }}
+              title="Panel de Administración"
+            >
+              👑
+            </button>
+          )}
 
           <button onClick={() => setDarkMode(!darkMode)} style={{ padding: '0.5rem', borderRadius: '0.5rem', border: 'none', backgroundColor: darkMode ? '#333' : '#f0f0f0', cursor: 'pointer' }}>
             {darkMode ? <Sun size={20} color="#fbbf24" /> : <Moon size={20} color="#666" />}
@@ -2018,6 +2259,14 @@ export default function FamControl() {
         isOpen={showSettingsModal} 
         onClose={() => setShowSettingsModal(false)} 
       />
+
+      {/* Modal de Administración */}
+      {showAdminDashboard && (
+        <AdminDashboard 
+          onClose={() => setShowAdminDashboard(false)} 
+          darkMode={darkMode}
+        />
+      )}
     </div>
   );
 }
