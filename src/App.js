@@ -12,6 +12,7 @@ import AppAccounts from './pages/AppAccounts';
 import AppTransactions from './pages/AppTransactions';
 import AppShopping from './pages/AppShopping';
 import AppEvents from './pages/AppEvents';
+import AppBudgets from './pages/AppBudgets';
 import AdminDashboard from './components/AdminDashboard';
 
 const DEFAULT_CATEGORIES = [
@@ -69,6 +70,7 @@ export default function FamControl() {
   const [categories] = useState(DEFAULT_CATEGORIES);
   const [accounts, setAccounts] = useState(DEFAULT_ACCOUNTS);
   const [budgets, setBudgets] = useState({});
+  const [customBudgets, setCustomBudgets] = useState({});
   const [shoppingList, setShoppingList] = useState({});
   const [transactions, setTransactions] = useState({});
   const [events, setEvents] = useState({});
@@ -270,6 +272,7 @@ export default function FamControl() {
       const { data: { user: currentUser } } = await supabase.auth.getUser();
       console.log('🔍 Usuario autenticado:', currentUser?.email);
       
+      // Cargar cuentas
       const { data: accountsData, error: accountsError } = await supabase
         .from('accounts')
         .select('*')
@@ -292,6 +295,7 @@ export default function FamControl() {
         setAccounts(DEFAULT_ACCOUNTS);
       }
 
+      // Cargar transacciones
       const { data: transData, error: transError } = await supabase
         .from('transactions')
         .select('*')
@@ -308,6 +312,7 @@ export default function FamControl() {
       });
       setTransactions(transObj);
 
+      // Cargar presupuestos antiguos
       const { data: budgetData, error: budgetError } = await supabase
         .from('budgets')
         .select('*')
@@ -322,6 +327,21 @@ export default function FamControl() {
       });
       setBudgets(budgetObj);
 
+      // Cargar presupuestos personalizados
+      const { data: customBudgetData, error: customBudgetError } = await supabase
+        .from('custom_budgets')
+        .select('*')
+        .eq('user_id', userId);
+      
+      if (customBudgetError) throw customBudgetError;
+    
+      const customBudgetObj = {};
+      customBudgetData?.forEach(cb => {
+        customBudgetObj[cb.id] = cb;
+      });
+      setCustomBudgets(customBudgetObj);
+
+      // Cargar eventos
       const { data: eventData, error: eventError } = await supabase
         .from('events')
         .select('*')
@@ -338,6 +358,7 @@ export default function FamControl() {
       });
       setEvents(eventObj);
 
+      // Cargar lista de compras
       const { data: shoppingData, error: shoppingError } = await supabase
         .from('shopping_list')
         .select('*')
@@ -349,6 +370,7 @@ export default function FamControl() {
       shoppingData?.forEach(s => { shoppingObj[s.id] = s; });
       setShoppingList(shoppingObj);
 
+      // Cargar metas
       const { data: goalsData, error: goalsError } = await supabase
         .from('goals')
         .select('*')
@@ -360,6 +382,7 @@ export default function FamControl() {
       goalsData?.forEach(g => { goalsObj[g.id] = g; });
       setGoals(goalsObj);
 
+      // Cargar rol del usuario
       const { data: profileData, error: profileError } = await supabase
         .from('user_profiles')
         .select('role')
@@ -552,7 +575,15 @@ export default function FamControl() {
             {darkMode ? <Sun size={20} color="#fbbf24" /> : <Moon size={20} color="#666" />}
           </button>
           <span style={{ fontSize: '0.875rem', color: textSec }}>{user}</span>
-          <button onClick={async () => { try { await supabase.auth.signOut(); setUser(null); localStorage.removeItem('famcontrol_current_user'); } catch (error) { console.error('Error al cerrar sesión:', error); } }} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', backgroundColor: '#ef4444', color: 'white', border: 'none', padding: '0.5rem 1rem', borderRadius: '0.5rem', cursor: 'pointer', fontWeight: '500' }}>
+          <button onClick={async () => { 
+            try { 
+              await supabase.auth.signOut(); 
+              setUser(null); 
+              localStorage.removeItem('famcontrol_current_user'); 
+            } catch (error) { 
+              console.error('Error al cerrar sesión:', error); 
+            }
+          }} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', backgroundColor: '#ef4444', color: 'white', border: 'none', padding: '0.5rem 1rem', borderRadius: '0.5rem', cursor: 'pointer', fontWeight: '500' }}>
             <LogOut size={18} /> Salir
           </button>
         </div>
@@ -571,7 +602,23 @@ export default function FamControl() {
           const Icon = tab.icon;
           const active = currentTab === tab.id;
           return (
-            <button key={tab.id} onClick={() => setCurrentTab(tab.id)} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '1rem', fontWeight: '500', border: 'none', background: 'none', cursor: 'pointer', color: active ? '#2563eb' : textSec, borderBottom: active ? '2px solid #2563eb' : '2px solid transparent' }}>
+            <button 
+              key={tab.id} 
+              onClick={() => setCurrentTab(tab.id)} 
+              style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '0.5rem', 
+                padding: '1rem', 
+                fontWeight: '500', 
+                border: 'none', 
+                background: 'none', 
+                cursor: 'pointer', 
+                color: active ? '#2563eb' : textSec, 
+                borderBottom: active ? '2px solid #2563eb' : '2px solid transparent',
+                whiteSpace: 'nowrap'
+              }}
+            >
               <Icon size={18} /> {tab.label}
             </button>
           );
@@ -584,30 +631,50 @@ export default function FamControl() {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1.5rem', marginBottom: '1.5rem' }}>
               <div style={{ backgroundColor: card, border: `1px solid ${border}`, padding: '1.5rem', borderRadius: '1rem' }}>
                 <p style={{ color: textSec, fontSize: '0.875rem', margin: '0 0 0.5rem 0' }}>Balance Total</p>
-                <p style={{ fontSize: '2rem', fontWeight: 'bold', margin: 0, color: totalBalance >= 0 ? '#10b981' : '#ef4444' }}>${formatNumber(totalBalance)}</p>
+                <p style={{ fontSize: '2rem', fontWeight: 'bold', margin: 0, color: totalBalance >= 0 ? '#10b981' : '#ef4444' }}>
+                  ${formatNumber(totalBalance)}
+                </p>
               </div>
               <div style={{ backgroundColor: card, border: `1px solid ${border}`, padding: '1.5rem', borderRadius: '1rem' }}>
                 <p style={{ color: textSec, fontSize: '0.875rem', margin: '0 0 0.5rem 0' }}>Ingresos (mes)</p>
-                <p style={{ fontSize: '2rem', fontWeight: 'bold', margin: 0, color: '#10b981' }}>${formatNumber(Object.values(transactions).filter(t => t.tipo === 'ingreso' && t.fecha.startsWith(new Date().toISOString().slice(0, 7))).reduce((sum, t) => sum + parseFloat(t.valor), 0))}</p>
+                <p style={{ fontSize: '2rem', fontWeight: 'bold', margin: 0, color: '#10b981' }}>
+                  ${formatNumber(
+                    Object.values(transactions)
+                      .filter(t => t.tipo === 'ingreso' && t.fecha.startsWith(new Date().toISOString().slice(0, 7)))
+                      .reduce((sum, t) => sum + parseFloat(t.valor), 0)
+                  )}
+                </p>
               </div>
               <div style={{ backgroundColor: card, border: `1px solid ${border}`, padding: '1.5rem', borderRadius: '1rem' }}>
                 <p style={{ color: textSec, fontSize: '0.875rem', margin: '0 0 0.5rem 0' }}>Gastos (mes)</p>
-                <p style={{ fontSize: '2rem', fontWeight: 'bold', margin: 0, color: '#ef4444' }}>${formatNumber(Object.values(transactions).filter(t => t.tipo === 'gasto' && t.fecha.startsWith(new Date().toISOString().slice(0, 7))).reduce((sum, t) => sum + parseFloat(t.valor), 0))}</p>
+                <p style={{ fontSize: '2rem', fontWeight: 'bold', margin: 0, color: '#ef4444' }}>
+                  ${formatNumber(
+                    Object.values(transactions)
+                      .filter(t => t.tipo === 'gasto' && t.fecha.startsWith(new Date().toISOString().slice(0, 7)))
+                      .reduce((sum, t) => sum + parseFloat(t.valor), 0)
+                  )}
+                </p>
               </div>
               <div style={{ backgroundColor: card, border: `1px solid ${border}`, padding: '1.5rem', borderRadius: '1rem' }}>
                 <p style={{ color: textSec, fontSize: '0.875rem', margin: '0 0 0.5rem 0' }}>Ahorro Mensual</p>
-                <p style={{ fontSize: '2rem', fontWeight: 'bold', margin: 0, color: monthlySavings >= 0 ? '#10b981' : '#ef4444' }}>${formatNumber(monthlySavings)}</p>
+                <p style={{ fontSize: '2rem', fontWeight: 'bold', margin: 0, color: monthlySavings >= 0 ? '#10b981' : '#ef4444' }}>
+                  ${formatNumber(monthlySavings)}
+                </p>
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginBottom: '1.5rem' }}>
               <div style={{ backgroundColor: card, border: `1px solid ${border}`, padding: '1.5rem', borderRadius: '1rem' }}>
                 <h2 style={{ color: text, margin: '0 0 1rem 0' }}>Tendencia Mensual</h2>
                 <ResponsiveContainer width="100%" height={250}>
                   <BarChart data={monthlyTrend}>
                     <XAxis dataKey="month" stroke={textSec} />
                     <YAxis stroke={textSec} tickFormatter={(value) => `$${formatNumber(value)}`} />
-                    <Tooltip formatter={(value) => [`$${formatNumber(value)}`, 'Valor']} labelFormatter={(label) => `Mes: ${label}`} />
+                    <Tooltip 
+                      formatter={(value) => [`$${formatNumber(value)}`, 'Valor']} 
+                      labelFormatter={(label) => `Mes: ${label}`}
+                      contentStyle={{ backgroundColor: card, border: `1px solid ${border}` }}
+                    />
                     <Legend />
                     <Bar dataKey="ingresos" fill="#10b981" name="Ingresos" />
                     <Bar dataKey="gastos" fill="#ef4444" name="Gastos" />
@@ -620,7 +687,9 @@ export default function FamControl() {
                 {accounts.map(acc => (
                   <div key={acc.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '1rem', backgroundColor: darkMode ? '#2a2a2a' : '#f9f9f9', borderRadius: '0.5rem', marginBottom: '0.5rem' }}>
                     <span style={{ color: text }}>{acc.icon} {acc.name}</span>
-                    <span style={{ fontWeight: 'bold', color: acc.saldo >= 0 ? '#10b981' : '#ef4444' }}>${formatNumber(acc.saldo || 0)}</span>
+                    <span style={{ fontWeight: 'bold', color: acc.saldo >= 0 ? '#10b981' : '#ef4444' }}>
+                      ${formatNumber(acc.saldo || 0)}
+                    </span>
                   </div>
                 ))}
               </div>
@@ -720,8 +789,29 @@ export default function FamControl() {
           />
         )}
 
+        {currentTab === 'presupuestos' && (
+          <AppBudgets 
+            budgets={budgets}
+            setBudgets={setBudgets}
+            customBudgets={customBudgets}
+            setCustomBudgets={setCustomBudgets}
+            transactions={transactions}
+            accounts={accounts}
+            darkMode={darkMode}
+            card={card}
+            border={border}
+            text={text}
+            textSec={textSec}
+            input={input}
+            formatNumber={formatNumber}
+            categories={categories}
+          />
+        )}
+
         {currentTab === 'compras' && (
           <AppShopping 
+            shoppingList={shoppingList}
+            setShoppingList={setShoppingList}
             darkMode={darkMode}
             card={card}
             border={border}
@@ -751,6 +841,12 @@ export default function FamControl() {
             accounts={accounts}
             goals={Object.values(goals)}
             budgets={Object.values(budgets)}
+            customBudgets={Object.values(customBudgets)}
+            darkMode={darkMode}
+            card={card}
+            border={border}
+            text={text}
+            formatNumber={formatNumber}
           />
         )}
       </div>
