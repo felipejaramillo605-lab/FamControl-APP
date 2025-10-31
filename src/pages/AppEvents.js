@@ -558,7 +558,7 @@ const AppEvents = ({
                     key={e.id}
                     style={{
                       backgroundColor: card,
-                      border: `2px solid ${cat.color}`,
+                      border: `2px solid ${cat?.color || '#3b82f6'}`,
                       borderRadius: '0.75rem',
                       padding: '1.5rem'
                     }}
@@ -566,7 +566,7 @@ const AppEvents = ({
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
                       <div style={{ flex: 1 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem' }}>
-                          <span style={{ fontSize: '1.5rem' }}>{cat.icon}</span>
+                          <span style={{ fontSize: '1.5rem' }}>{cat?.icon || '📅'}</span>
                           <h4 style={{ color: text, margin: 0, fontWeight: '600' }}>{e.titulo}</h4>
                           {daysUntil <= 3 && daysUntil >= 0 && (
                             <span style={{
