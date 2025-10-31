@@ -2,15 +2,16 @@ import { useSettingsStore } from './stores/settings';
 import SettingsModal from './components/SettingsModal';
 import DailyQuote from './components/DailyQuote';
 import DashboardResumen from './components/DashboardResumen';
-import AdminDashboard from './components/AdminDashboard';
 import { supabase } from './supabaseClient';
 import React, { useState, useEffect } from 'react';
-import { Plus, LogOut, BarChart3, Calendar, DollarSign, Home, Moon, Sun, ShoppingCart, Wallet } from 'lucide-react';
+import { Plus, LogOut, BarChart3, Calendar, DollarSign, Home, Moon, Sun, ShoppingCart, Wallet, TrendingUp, Trash2, Target } from 'lucide-react';
+import { BarChart, Bar, ResponsiveContainer, XAxis, YAxis, Legend, Tooltip } from 'recharts';
 
 // Importar componentes modularizados
 import AppAccounts from './pages/AppAccounts';
 import AppTransactions from './pages/AppTransactions';
 import AppShopping from './pages/AppShopping';
+import AdminDashboard from './components/AdminDashboard';
 
 const DEFAULT_CATEGORIES = [
   { id: 'alimentacion', name: 'Alimentación', icon: '🍔', color: '#ef4444' },
@@ -22,30 +23,6 @@ const DEFAULT_CATEGORIES = [
   { id: 'compras', name: 'Compras', icon: '🛍️', color: '#ec4899' },
   { id: 'otros', name: 'Otros', icon: '📦', color: '#6b7280' }
 ];
-
-const ACCOUNT_CATEGORIES = {
-  efectivo: { name: 'Efectivo', icon: '💵', types: ['efectivo'] },
-  debito: { 
-    name: 'Débito', 
-    icon: '📊',
-    types: [
-      { id: 'ahorro', name: 'Cuenta de Ahorro', icon: '🏦' },
-      { id: 'billetera', name: 'Billetera Digital', icon: '👛' },
-      { id: 'fiducia', name: 'Fiducia', icon: '📋' },
-      { id: 'cdt', name: 'CDT', icon: '📈' },
-      { id: 'inversion', name: 'Inversiones', icon: '💹' }
-    ]
-  },
-  credito: { 
-    name: 'Crédito', 
-    icon: '💳',
-    types: [
-      { id: 'hipotecario', name: 'Crédito Hipotecario', icon: '🏠' },
-      { id: 'prestamo', name: 'Préstamo', icon: '📌' },
-      { id: 'tarjeta', name: 'Tarjeta de Crédito', icon: '💳' }
-    ]
-  }
-};
 
 const DEFAULT_ACCOUNTS = [
   { id: 'efectivo_default', name: 'Efectivo', icon: '💵', saldo: 0, tipo: 'efectivo', categoria: 'efectivo' }
@@ -64,7 +41,6 @@ export default function FamControl() {
   const [showAdminDashboard, setShowAdminDashboard] = useState(false);
   const [userRole, setUserRole] = useState('user');
 
-  // Estados de datos
   const [categories] = useState(DEFAULT_CATEGORIES);
   const [accounts, setAccounts] = useState(DEFAULT_ACCOUNTS);
   const [budgets, setBudgets] = useState({});
@@ -75,8 +51,6 @@ export default function FamControl() {
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   
   const settingsStore = useSettingsStore();
-
-  // ============ EFECTOS Y AUTENTICACIÓN ============
 
   useEffect(() => {
     const checkSession = async () => {
@@ -100,6 +74,7 @@ export default function FamControl() {
           }
         
           await loadUserData(userId);
+          await debugSync(userId);
         }
       } catch (error) {
         console.error('Error crítico:', error);
@@ -131,7 +106,63 @@ export default function FamControl() {
     initializeSettings();
   }, [settingsStore]);
 
-  // ============ FUNCIONES DE AUTENTICACIÓN ============
+  useEffect(() => {
+    console.log('🔄 Estado userRole actualizado:', userRole);
+  }, [userRole]);
+
+  const debugSync = async (userId) => {
+    console.log('🔍 DEBUG Sincronización');
+    const { data: remoteTx, error } = await supabase
+      .from('transactions')
+      .select('*')
+      .eq('user_id', userId);
+    
+    console.log('Transacciones en Supabase:', remoteTx?.length || 0);
+    console.log('Transacciones locales:', Object.values(transactions).length);
+    
+    if (error) {
+      console.error('Error en sync:', error);
+    }
+    
+    return remoteTx;
+  };
+
+  const checkSupabaseConnection = async () => {
+    try {
+      const { data, error } = await supabase.from('accounts').select('count').limit(1);
+      if (error) throw error;
+      console.log('✅ Conexión con Supabase establecida');
+      return true;
+    } catch (error) {
+      console.error('❌ Error de conexión con Supabase:', error);
+      alert('Error de conexión con la base de datos. Recarga la página.');
+      return false;
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    if (!resetEmail) {
+      alert('Por favor ingresa tu email');
+      return;
+    }
+
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(resetEmail, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+      
+      if (error) throw error;
+      
+      setResetMessage('Se ha enviado un correo para restablecer tu contraseña');
+      setTimeout(() => {
+        setShowForgotPassword(false);
+        setResetEmail('');
+        setResetMessage('');
+      }, 3000);
+    } catch (error) {
+      alert('Error: ' + error.message);
+    }
+  };
 
   const handleLogin = async () => {
     if (!loginEmail || !loginPassword) {
@@ -172,6 +203,10 @@ export default function FamControl() {
           if (currentUser) {
             await loadUserData(currentUser.id);
           }
+          await checkSupabaseConnection();
+        } else {
+          alert('Registro exitoso! Ya puedes iniciar sesión');
+          setRegisterMode(false);
         }
       } else {
         const { data, error } = await supabase.auth.signInWithPassword({
@@ -190,6 +225,7 @@ export default function FamControl() {
         if (currentUser) {
           await loadUserData(currentUser.id);
         }
+        await checkSupabaseConnection();
       }
       
       setLoginEmail('');
@@ -200,32 +236,6 @@ export default function FamControl() {
     }
   };
 
-  const handleForgotPassword = async () => {
-    if (!resetEmail) {
-      alert('Por favor ingresa tu email');
-      return;
-    }
-
-    try {
-      const { error } = await supabase.auth.resetPasswordForEmail(resetEmail, {
-        redirectTo: `${window.location.origin}/reset-password`,
-      });
-      
-      if (error) throw error;
-      
-      setResetMessage('Se ha enviado un correo para restablecer tu contraseña');
-      setTimeout(() => {
-        setShowForgotPassword(false);
-        setResetEmail('');
-        setResetMessage('');
-      }, 3000);
-    } catch (error) {
-      alert('Error: ' + error.message);
-    }
-  };
-
-  // ============ CARGA DE DATOS ============
-
   const loadUserData = async (userId) => {
     try {
       if (typeof window === 'undefined') return;
@@ -235,14 +245,13 @@ export default function FamControl() {
       const { data: { user: currentUser } } = await supabase.auth.getUser();
       console.log('🔍 Usuario autenticado:', currentUser?.email);
       
-      // Cargar cuentas
       const { data: accountsData, error: accountsError } = await supabase
         .from('accounts')
         .select('*')
         .eq('user_id', userId);
       
       if (accountsError) throw accountsError;
-      
+    
       if (accountsData && accountsData.length > 0) {
         const updatedAccounts = accountsData.map(acc => ({
           ...acc,
@@ -258,28 +267,29 @@ export default function FamControl() {
         setAccounts(DEFAULT_ACCOUNTS);
       }
 
-      // Cargar transacciones
       const { data: transData, error: transError } = await supabase
         .from('transactions')
         .select('*')
         .eq('user_id', userId);
       
       if (transError) throw transError;
-      
+    
       const transObj = {};
       transData?.forEach(t => { 
-        transObj[t.id] = { ...t, cuentaDestino: t.cuenta_destino }; 
+        transObj[t.id] = {
+          ...t,
+          cuentaDestino: t.cuenta_destino
+        }; 
       });
       setTransactions(transObj);
 
-      // Cargar presupuestos
       const { data: budgetData, error: budgetError } = await supabase
         .from('budgets')
         .select('*')
         .eq('user_id', userId);
       
       if (budgetError) throw budgetError;
-      
+    
       const budgetObj = {};
       budgetData?.forEach(b => { 
         const key = `${b.categoria}-${b.mes}`;
@@ -287,45 +297,44 @@ export default function FamControl() {
       });
       setBudgets(budgetObj);
 
-      // Cargar eventos
       const { data: eventData, error: eventError } = await supabase
         .from('events')
         .select('*')
         .eq('user_id', userId);
       
       if (eventError) throw eventError;
-      
+    
       const eventObj = {};
       eventData?.forEach(e => { 
-        eventObj[e.id] = { ...e, fecha_inicio: e.fecha_inicio }; 
+        eventObj[e.id] = {
+          ...e,
+          fecha_inicio: e.fecha_inicio
+        }; 
       });
       setEvents(eventObj);
 
-      // Cargar lista de compras
       const { data: shoppingData, error: shoppingError } = await supabase
         .from('shopping_list')
         .select('*')
         .eq('user_id', userId);
       
       if (shoppingError) throw shoppingError;
-      
+    
       const shoppingObj = {};
       shoppingData?.forEach(s => { shoppingObj[s.id] = s; });
       setShoppingList(shoppingObj);
 
-      // Cargar metas
       const { data: goalsData, error: goalsError } = await supabase
         .from('goals')
         .select('*')
         .eq('user_id', userId);
       
       if (goalsError) throw goalsError;
-      
+    
       const goalsObj = {};
       goalsData?.forEach(g => { goalsObj[g.id] = g; });
       setGoals(goalsObj);
 
-      // Cargar rol
       const { data: profileData, error: profileError } = await supabase
         .from('user_profiles')
         .select('role')
@@ -338,7 +347,6 @@ export default function FamControl() {
         setUserRole(profileData?.role || 'user');
       }
 
-      // Admin temporal para testing
       if (currentUser?.email === 'felipejaramillo605@gmail.com') {
         setUserRole('admin');
       }
@@ -351,7 +359,66 @@ export default function FamControl() {
     }
   };
 
-  // ============ HELPERS ============
+  const getMonthlySavings = () => {
+    const currentMonth = new Date().toISOString().slice(0, 7);
+    const monthTx = Object.values(transactions).filter(t => 
+      t.fecha.startsWith(currentMonth)
+    );
+    
+    let ingresos = monthTx
+      .filter(t => t.tipo === 'ingreso')
+      .reduce((sum, t) => sum + (parseFloat(t.valor) || 0), 0);
+    
+    let gastos = monthTx
+      .filter(t => t.tipo === 'gasto')
+      .reduce((sum, t) => sum + (parseFloat(t.valor) || 0), 0);
+
+    return Math.round(ingresos - gastos);
+  };
+
+  const getMonthlyTrend = () => {
+    const data = {};
+    Object.values(transactions).forEach(t => {
+      const month = t.fecha.slice(0, 7);
+      if (!data[month]) data[month] = { month, ingresos: 0, gastos: 0 };
+      const valor = parseFloat(t.valor) || 0;
+      if (t.tipo === 'ingreso') data[month].ingresos += valor;
+      else if (t.tipo === 'gasto') data[month].gastos += valor;
+    });
+    return Object.values(data)
+      .sort((a, b) => a.month.localeCompare(b.month))
+      .slice(-6)
+      .map(item => ({
+        ...item,
+        ingresos: Math.round(item.ingresos),
+        gastos: Math.round(item.gastos)
+      }));
+  };
+
+  const getGoalIcon = (category) => {
+    const icons = {
+      viaje: '✈️',
+      casa: '🏠',
+      auto: '🚗',
+      educacion: '🎓',
+      salud: '⚕️',
+      tecnologia: '💻',
+      otros: '🎯'
+    };
+    return icons[category] || '🎯';
+  };
+
+  const getGoalProgress = (goal) => {
+    const target = parseFloat(goal.target_amount) || 1;
+    const saved = parseFloat(goal.current_saved) || 0;
+    const percentage = (saved / target) * 100;
+    return {
+      percentage: Math.min(percentage, 100),
+      remaining: target - saved,
+      saved: saved,
+      target: target
+    };
+  };
 
   const totalBalance = accounts.reduce((sum, acc) => {
     let saldo = acc.saldo || 0;
@@ -376,8 +443,6 @@ export default function FamControl() {
   const textSec = darkMode ? '#999999' : '#666666';
   const input = darkMode ? '#2a2a2a' : '#ffffff';
 
-  // ============ RENDER DE LOGIN ============
-
   if (!user) {
     return (
       <div style={{ minHeight: '100vh', backgroundColor: bg, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
@@ -393,148 +458,42 @@ export default function FamControl() {
               <h1 style={{ fontSize: '2rem', fontWeight: 'bold', textAlign: 'center', color: text, margin: '0 0 0.5rem 0' }}>FamControl v2</h1>
               <p style={{ textAlign: 'center', color: textSec, margin: '0 0 2rem 0' }}>Gestiona tus finanzas familiares</p>
               
-              <input 
-                type="email" 
-                placeholder="Email" 
-                value={loginEmail} 
-                onChange={(e) => setLoginEmail(e.target.value)} 
-                style={{ width: '100%', padding: '0.75rem', border: `1px solid ${border}`, borderRadius: '0.5rem', backgroundColor: input, color: text, marginBottom: '1rem', boxSizing: 'border-box' }} 
-              />
+              <input type="email" placeholder="Email" value={loginEmail} onChange={(e) => setLoginEmail(e.target.value)} style={{ width: '100%', padding: '0.75rem', border: `1px solid ${border}`, borderRadius: '0.5rem', backgroundColor: input, color: text, marginBottom: '1rem', boxSizing: 'border-box' }} />
               
-              <input 
-                type="password" 
-                placeholder="Contraseña" 
-                value={loginPassword} 
-                onChange={(e) => setLoginPassword(e.target.value)} 
-                onKeyPress={(e) => e.key === 'Enter' && handleLogin()}
-                style={{ width: '100%', padding: '0.75rem', border: `1px solid ${border}`, borderRadius: '0.5rem', backgroundColor: input, color: text, marginBottom: '0.5rem', boxSizing: 'border-box' }} 
-              />
+              <input type="password" placeholder="Contraseña" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && handleLogin()} style={{ width: '100%', padding: '0.75rem', border: `1px solid ${border}`, borderRadius: '0.5rem', backgroundColor: input, color: text, marginBottom: '0.5rem', boxSizing: 'border-box' }} />
               
               {!registerMode && (
-                <button 
-                  onClick={() => setShowForgotPassword(true)} 
-                  style={{ 
-                    width: '100%', 
-                    padding: '0.5rem', 
-                    backgroundColor: 'transparent', 
-                    color: '#2563eb', 
-                    border: 'none', 
-                    textAlign: 'right',
-                    cursor: 'pointer',
-                    fontSize: '0.875rem',
-                    marginBottom: '1rem'
-                  }}
-                >
+                <button onClick={() => setShowForgotPassword(true)} style={{ width: '100%', padding: '0.5rem', backgroundColor: 'transparent', color: '#2563eb', border: 'none', textAlign: 'right', cursor: 'pointer', fontSize: '0.875rem', marginBottom: '1rem' }}>
                   ¿Olvidaste tu contraseña?
                 </button>
               )}
               
-              <button 
-                onClick={handleLogin} 
-                style={{ 
-                  width: '100%', 
-                  padding: '0.75rem', 
-                  backgroundColor: '#2563eb', 
-                  color: 'white', 
-                  border: 'none', 
-                  borderRadius: '0.5rem', 
-                  fontWeight: '600', 
-                  cursor: 'pointer', 
-                  marginBottom: '1rem'
-                }}
-              >
+              <button onClick={handleLogin} style={{ width: '100%', padding: '0.75rem', backgroundColor: '#2563eb', color: 'white', border: 'none', borderRadius: '0.5rem', fontWeight: '600', cursor: 'pointer', marginBottom: '1rem' }}>
                 {registerMode ? 'Registrarse' : 'Iniciar Sesión'}
               </button>
               
-              <button 
-                onClick={() => setRegisterMode(!registerMode)} 
-                style={{ 
-                  width: '100%', 
-                  padding: '0.75rem', 
-                  backgroundColor: 'transparent', 
-                  color: '#2563eb', 
-                  border: 'none', 
-                  borderRadius: '0.5rem', 
-                  fontWeight: '600', 
-                  cursor: 'pointer' 
-                }}
-              >
+              <button onClick={() => setRegisterMode(!registerMode)} style={{ width: '100%', padding: '0.75rem', backgroundColor: 'transparent', color: '#2563eb', border: 'none', borderRadius: '0.5rem', fontWeight: '600', cursor: 'pointer' }}>
                 {registerMode ? 'Volver al login' : '¿No tienes cuenta? Regístrate'}
               </button>
             </>
           ) : (
             <>
-              <h2 style={{ fontSize: '1.5rem', fontWeight: 'bold', color: text, margin: '0 0 1rem 0' }}>
-                Restablecer Contraseña
-              </h2>
-              <p style={{ color: textSec, fontSize: '0.875rem', margin: '0 0 1.5rem 0' }}>
-                Ingresa tu email y te enviaremos un enlace para restablecer tu contraseña
-              </p>
+              <h2 style={{ fontSize: '1.5rem', fontWeight: 'bold', color: text, margin: '0 0 1rem 0' }}>Restablecer Contraseña</h2>
+              <p style={{ color: textSec, fontSize: '0.875rem', margin: '0 0 1.5rem 0' }}>Ingresa tu email y te enviaremos un enlace para restablecer tu contraseña</p>
               
               {resetMessage && (
-                <div style={{ 
-                  padding: '0.75rem', 
-                  backgroundColor: '#d1fae5', 
-                  color: '#065f46', 
-                  borderRadius: '0.5rem', 
-                  marginBottom: '1rem',
-                  fontSize: '0.875rem'
-                }}>
+                <div style={{ padding: '0.75rem', backgroundColor: '#d1fae5', color: '#065f46', borderRadius: '0.5rem', marginBottom: '1rem', fontSize: '0.875rem' }}>
                   {resetMessage}
                 </div>
               )}
               
-              <input 
-                type="email" 
-                placeholder="Email" 
-                value={resetEmail} 
-                onChange={(e) => setResetEmail(e.target.value)} 
-                style={{ 
-                  width: '100%', 
-                  padding: '0.75rem', 
-                  border: `1px solid ${border}`, 
-                  borderRadius: '0.5rem', 
-                  backgroundColor: input, 
-                  color: text, 
-                  marginBottom: '1rem', 
-                  boxSizing: 'border-box' 
-                }} 
-              />
+              <input type="email" placeholder="Email" value={resetEmail} onChange={(e) => setResetEmail(e.target.value)} style={{ width: '100%', padding: '0.75rem', border: `1px solid ${border}`, borderRadius: '0.5rem', backgroundColor: input, color: text, marginBottom: '1rem', boxSizing: 'border-box' }} />
               
-              <button 
-                onClick={handleForgotPassword} 
-                style={{ 
-                  width: '100%', 
-                  padding: '0.75rem', 
-                  backgroundColor: '#2563eb', 
-                  color: 'white', 
-                  border: 'none', 
-                  borderRadius: '0.5rem', 
-                  fontWeight: '600', 
-                  cursor: 'pointer', 
-                  marginBottom: '0.5rem' 
-                }}
-              >
+              <button onClick={handleForgotPassword} style={{ width: '100%', padding: '0.75rem', backgroundColor: '#2563eb', color: 'white', border: 'none', borderRadius: '0.5rem', fontWeight: '600', cursor: 'pointer', marginBottom: '0.5rem' }}>
                 Enviar enlace
               </button>
               
-              <button 
-                onClick={() => {
-                  setShowForgotPassword(false);
-                  setResetEmail('');
-                  setResetMessage('');
-                }} 
-                style={{ 
-                  width: '100%', 
-                  padding: '0.75rem', 
-                  backgroundColor: 'transparent', 
-                  color: '#6b7280', 
-                  border: 'none', 
-                  borderRadius: '0.5rem', 
-                  fontWeight: '600', 
-                  cursor: 'pointer' 
-                }}
-              >
+              <button onClick={() => { setShowForgotPassword(false); setResetEmail(''); setResetMessage(''); }} style={{ width: '100%', padding: '0.75rem', backgroundColor: 'transparent', color: '#6b7280', border: 'none', borderRadius: '0.5rem', fontWeight: '600', cursor: 'pointer' }}>
                 Volver al login
               </button>
             </>
@@ -544,30 +503,22 @@ export default function FamControl() {
     );
   }
 
-  // ============ RENDER PRINCIPAL ============
+  const monthlySavings = getMonthlySavings();
+  const monthlyTrend = getMonthlyTrend();
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: bg }}>
-      {/* Header */}
       <div style={{ backgroundColor: card, borderBottom: `1px solid ${border}`, padding: '1rem 2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', color: text, margin: 0 }}>
           {settingsStore.settings?.app_name || 'FamControl v2'}
         </h1>
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          <button
-            onClick={() => setShowSettingsModal(true)}
-            style={{ padding: '0.5rem', borderRadius: '0.5rem', border: 'none', backgroundColor: darkMode ? '#333' : '#f0f0f0', cursor: 'pointer' }}
-            title="Configuración"
-          >
+          <button onClick={() => setShowSettingsModal(true)} style={{ padding: '0.5rem', borderRadius: '0.5rem', border: 'none', backgroundColor: darkMode ? '#333' : '#f0f0f0', cursor: 'pointer' }} title="Configuración">
             ⚙️
           </button>
 
           {userRole === 'admin' && (
-            <button
-              onClick={() => setShowAdminDashboard(true)}
-              style={{ padding: '0.5rem', borderRadius: '0.5rem', border: 'none', backgroundColor: darkMode ? '#333' : '#f0f0f0', cursor: 'pointer' }}
-              title="Panel de Administración"
-            >
+            <button onClick={() => setShowAdminDashboard(true)} style={{ padding: '0.5rem', borderRadius: '0.5rem', border: 'none', backgroundColor: darkMode ? '#333' : '#f0f0f0', cursor: 'pointer' }} title="Panel de Administración">
               👑
             </button>
           )}
@@ -576,41 +527,18 @@ export default function FamControl() {
             {darkMode ? <Sun size={20} color="#fbbf24" /> : <Moon size={20} color="#666" />}
           </button>
           <span style={{ fontSize: '0.875rem', color: textSec }}>{user}</span>
-          <button 
-            onClick={async () => { 
-              try {
-                await supabase.auth.signOut(); 
-                setUser(null);
-                localStorage.removeItem('famcontrol_current_user');
-              } catch (error) {
-                console.error('Error al cerrar sesión:', error);
-              }
-            }} 
-            style={{ 
-              display: 'flex', 
-              alignItems: 'center', 
-              gap: '0.5rem', 
-              backgroundColor: '#ef4444', 
-              color: 'white', 
-              border: 'none', 
-              padding: '0.5rem 1rem', 
-              borderRadius: '0.5rem', 
-              cursor: 'pointer', 
-              fontWeight: '500' 
-            }}
-          >
+          <button onClick={async () => { try { await supabase.auth.signOut(); setUser(null); localStorage.removeItem('famcontrol_current_user'); } catch (error) { console.error('Error al cerrar sesión:', error); } }} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', backgroundColor: '#ef4444', color: 'white', border: 'none', padding: '0.5rem 1rem', borderRadius: '0.5rem', cursor: 'pointer', fontWeight: '500' }}>
             <LogOut size={18} /> Salir
           </button>
         </div>
       </div>
 
-      {/* Tabs */}
       <div style={{ backgroundColor: card, borderBottom: `1px solid ${border}`, padding: '0 2rem', display: 'flex', gap: '0.5rem', overflowX: 'auto' }}>
         {[
           { id: 'home', label: 'Inicio', icon: Home },
           { id: 'cuentas', label: 'Cuentas', icon: Wallet },
           { id: 'transacciones', label: 'Transacciones', icon: DollarSign },
-          { id: 'presupuestos', label: 'Presupuestos', icon: BarChart3 },
+          { id: 'presupuestos', label: 'Presupuestos', icon: TrendingUp },
           { id: 'compras', label: 'Compras', icon: ShoppingCart },
           { id: 'eventos', label: 'Eventos', icon: Calendar },
           { id: 'resumen', label: 'Resumen', icon: BarChart3 }
@@ -625,7 +553,6 @@ export default function FamControl() {
         })}
       </div>
 
-      {/* Contenido */}
       <div style={{ maxWidth: '80rem', margin: '0 auto', padding: '1.5rem' }}>
         {currentTab === 'home' && (
           <div>
@@ -634,7 +561,100 @@ export default function FamControl() {
                 <p style={{ color: textSec, fontSize: '0.875rem', margin: '0 0 0.5rem 0' }}>Balance Total</p>
                 <p style={{ fontSize: '2rem', fontWeight: 'bold', margin: 0, color: totalBalance >= 0 ? '#10b981' : '#ef4444' }}>${formatNumber(totalBalance)}</p>
               </div>
+              <div style={{ backgroundColor: card, border: `1px solid ${border}`, padding: '1.5rem', borderRadius: '1rem' }}>
+                <p style={{ color: textSec, fontSize: '0.875rem', margin: '0 0 0.5rem 0' }}>Ingresos (mes)</p>
+                <p style={{ fontSize: '2rem', fontWeight: 'bold', margin: 0, color: '#10b981' }}>${formatNumber(Object.values(transactions).filter(t => t.tipo === 'ingreso' && t.fecha.startsWith(new Date().toISOString().slice(0, 7))).reduce((sum, t) => sum + parseFloat(t.valor), 0))}</p>
+              </div>
+              <div style={{ backgroundColor: card, border: `1px solid ${border}`, padding: '1.5rem', borderRadius: '1rem' }}>
+                <p style={{ color: textSec, fontSize: '0.875rem', margin: '0 0 0.5rem 0' }}>Gastos (mes)</p>
+                <p style={{ fontSize: '2rem', fontWeight: 'bold', margin: 0, color: '#ef4444' }}>${formatNumber(Object.values(transactions).filter(t => t.tipo === 'gasto' && t.fecha.startsWith(new Date().toISOString().slice(0, 7))).reduce((sum, t) => sum + parseFloat(t.valor), 0))}</p>
+              </div>
+              <div style={{ backgroundColor: card, border: `1px solid ${border}`, padding: '1.5rem', borderRadius: '1rem' }}>
+                <p style={{ color: textSec, fontSize: '0.875rem', margin: '0 0 0.5rem 0' }}>Ahorro Mensual</p>
+                <p style={{ fontSize: '2rem', fontWeight: 'bold', margin: 0, color: monthlySavings >= 0 ? '#10b981' : '#ef4444' }}>${formatNumber(monthlySavings)}</p>
+              </div>
             </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+              <div style={{ backgroundColor: card, border: `1px solid ${border}`, padding: '1.5rem', borderRadius: '1rem' }}>
+                <h2 style={{ color: text, margin: '0 0 1rem 0' }}>Tendencia Mensual</h2>
+                <ResponsiveContainer width="100%" height={250}>
+                  <BarChart data={monthlyTrend}>
+                    <XAxis dataKey="month" stroke={textSec} />
+                    <YAxis stroke={textSec} tickFormatter={(value) => `$${formatNumber(value)}`} />
+                    <Tooltip formatter={(value) => [`$${formatNumber(value)}`, 'Valor']} labelFormatter={(label) => `Mes: ${label}`} />
+                    <Legend />
+                    <Bar dataKey="ingresos" fill="#10b981" name="Ingresos" />
+                    <Bar dataKey="gastos" fill="#ef4444" name="Gastos" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+
+              <div style={{ backgroundColor: card, border: `1px solid ${border}`, padding: '1.5rem', borderRadius: '1rem' }}>
+                <h2 style={{ color: text, margin: '0 0 1rem 0' }}>Resumen de Cuentas</h2>
+                {accounts.map(acc => (
+                  <div key={acc.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '1rem', backgroundColor: darkMode ? '#2a2a2a' : '#f9f9f9', borderRadius: '0.5rem', marginBottom: '0.5rem' }}>
+                    <span style={{ color: text }}>{acc.icon} {acc.name}</span>
+                    <span style={{ fontWeight: 'bold', color: acc.saldo >= 0 ? '#10b981' : '#ef4444' }}>${formatNumber(acc.saldo || 0)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {Object.values(goals).length > 0 && (
+              <div style={{ marginTop: '1.5rem' }}>
+                <div style={{ backgroundColor: card, border: `1px solid ${border}`, padding: '1.5rem', borderRadius: '1rem' }}>
+                  <h2 style={{ color: text, margin: '0 0 1rem 0', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <Target size={20} /> Mis Metas Destacadas
+                  </h2>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1rem' }}>
+                    {Object.values(goals).slice(0, 3).map(goal => {
+                      const progress = getGoalProgress(goal);
+                      return (
+                        <div key={goal.id} style={{ 
+                          padding: '1.5rem', 
+                          backgroundColor: darkMode ? '#2a2a2a' : '#f9f9f9', 
+                          borderRadius: '0.75rem', 
+                          border: `2px solid ${border}`,
+                          position: 'relative'
+                        }}>
+                          <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>{getGoalIcon(goal.category)}</div>
+                          <h3 style={{ color: text, margin: '0 0 0.5rem 0' }}>{goal.name}</h3>
+                          <div style={{ width: '100%', height: '8px', backgroundColor: border, borderRadius: '4px', overflow: 'hidden', marginBottom: '0.5rem' }}>
+                            <div style={{ 
+                              width: `${progress.percentage}%`, 
+                              height: '100%', 
+                              backgroundColor: progress.percentage >= 100 ? '#10b981' : '#3b82f6',
+                              transition: 'width 0.3s' 
+                            }}></div>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.875rem', color: textSec }}>
+                            <span>${formatNumber(progress.saved)} / ${formatNumber(progress.target)}</span>
+                            <span>{progress.percentage.toFixed(0)}%</span>
+                          </div>
+                          {progress.percentage >= 100 && (
+                            <div style={{ 
+                              position: 'absolute', 
+                              top: '0.75rem', 
+                              right: '0.75rem', 
+                              background: '#10b981', 
+                              color: 'white', 
+                              padding: '0.25rem 0.5rem', 
+                              borderRadius: '0.25rem', 
+                              fontSize: '0.75rem', 
+                              fontWeight: '600' 
+                            }}>
+                              ¡Logrado! 🎉
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+
             <DailyQuote />
           </div>
         )}
@@ -652,6 +672,7 @@ export default function FamControl() {
             ACCOUNT_CATEGORIES={ACCOUNT_CATEGORIES}
             DEFAULT_ACCOUNTS={DEFAULT_ACCOUNTS}
             formatNumber={formatNumber}
+            transactions={transactions}
           />
         )}
 
@@ -669,6 +690,8 @@ export default function FamControl() {
             textSec={textSec}
             input={input}
             formatNumber={formatNumber}
+            budgets={budgets}
+            goals={goals}
           />
         )}
 
@@ -687,6 +710,20 @@ export default function FamControl() {
             input={input}
             formatNumber={formatNumber}
           />
+        )}
+
+        {currentTab === 'presupuestos' && (
+          <div style={{ backgroundColor: card, border: `1px solid ${border}`, padding: '1.5rem', borderRadius: '1rem' }}>
+            <h2 style={{ color: text, margin: '0 0 1.5rem 0' }}>Presupuestos y Metas</h2>
+            <p style={{ color: textSec, textAlign: 'center', padding: '2rem' }}>La funcionalidad de presupuestos y metas está integrada en las transacciones. Por favor ve a la pestaña de Transacciones.</p>
+          </div>
+        )}
+
+        {currentTab === 'eventos' && (
+          <div style={{ backgroundColor: card, border: `1px solid ${border}`, padding: '1.5rem', borderRadius: '1rem' }}>
+            <h2 style={{ color: text, margin: '0 0 1.5rem 0' }}>Eventos</h2>
+            <p style={{ color: textSec, textAlign: 'center', padding: '2rem' }}>La funcionalidad de eventos está integrada en la sección de Compras. Por favor ve a la pestaña de Compras.</p>
+          </div>
         )}
 
         {currentTab === 'resumen' && (
