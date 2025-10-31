@@ -24,6 +24,30 @@ const DEFAULT_CATEGORIES = [
   { id: 'otros', name: 'Otros', icon: '📦', color: '#6b7280' }
 ];
 
+const ACCOUNT_CATEGORIES = {
+  efectivo: { name: 'Efectivo', icon: '💵', types: ['efectivo'] },
+  debito: { 
+    name: 'Débito', 
+    icon: '📊',
+    types: [
+      { id: 'ahorro', name: 'Cuenta de Ahorro', icon: '🏦' },
+      { id: 'billetera', name: 'Billetera Digital', icon: '👛' },
+      { id: 'fiducia', name: 'Fiducia', icon: '📋' },
+      { id: 'cdt', name: 'CDT', icon: '📈' },
+      { id: 'inversion', name: 'Inversiones', icon: '💹' }
+    ]
+  },
+  credito: { 
+    name: 'Crédito', 
+    icon: '💳',
+    types: [
+      { id: 'hipotecario', name: 'Crédito Hipotecario', icon: '🏠' },
+      { id: 'prestamo', name: 'Préstamo', icon: '📌' },
+      { id: 'tarjeta', name: 'Tarjeta de Crédito', icon: '💳' }
+    ]
+  }
+};
+
 const DEFAULT_ACCOUNTS = [
   { id: 'efectivo_default', name: 'Efectivo', icon: '💵', saldo: 0, tipo: 'efectivo', categoria: 'efectivo' }
 ];
