@@ -11,6 +11,7 @@ import { BarChart, Bar, ResponsiveContainer, XAxis, YAxis, Legend, Tooltip } fro
 import AppAccounts from './pages/AppAccounts';
 import AppTransactions from './pages/AppTransactions';
 import AppShopping from './pages/AppShopping';
+import AppEvents from './pages/AppEvents';
 import AdminDashboard from './components/AdminDashboard';
 
 const DEFAULT_CATEGORIES = [
@@ -721,11 +722,6 @@ export default function FamControl() {
 
         {currentTab === 'compras' && (
           <AppShopping 
-            shoppingList={shoppingList}
-            setShoppingList={setShoppingList}
-            events={events}
-            setEvents={setEvents}
-            categories={categories}
             darkMode={darkMode}
             card={card}
             border={border}
@@ -736,18 +732,17 @@ export default function FamControl() {
           />
         )}
 
-        {currentTab === 'presupuestos' && (
-          <div style={{ backgroundColor: card, border: `1px solid ${border}`, padding: '1.5rem', borderRadius: '1rem' }}>
-            <h2 style={{ color: text, margin: '0 0 1.5rem 0' }}>Presupuestos y Metas</h2>
-            <p style={{ color: textSec, textAlign: 'center', padding: '2rem' }}>La funcionalidad de presupuestos y metas está integrada en las transacciones. Por favor ve a la pestaña de Transacciones.</p>
-          </div>
-        )}
-
         {currentTab === 'eventos' && (
-          <div style={{ backgroundColor: card, border: `1px solid ${border}`, padding: '1.5rem', borderRadius: '1rem' }}>
-            <h2 style={{ color: text, margin: '0 0 1.5rem 0' }}>Eventos</h2>
-            <p style={{ color: textSec, textAlign: 'center', padding: '2rem' }}>La funcionalidad de eventos está integrada en la sección de Compras. Por favor ve a la pestaña de Compras.</p>
-          </div>
+          <AppEvents 
+            events={events}
+            setEvents={setEvents}
+            darkMode={darkMode}
+            card={card}
+            border={border}
+            text={text}
+            textSec={textSec}
+            input={input}
+          />
         )}
 
         {currentTab === 'resumen' && (

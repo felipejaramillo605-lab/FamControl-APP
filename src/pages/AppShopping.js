@@ -1,13 +1,8 @@
 import React, { useState } from 'react';
 import { supabase } from '../supabaseClient';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, Edit2, Check } from 'lucide-react';
 
 const AppShopping = ({
-  shoppingList,
-  setShoppingList,
-  events,
-  setEvents,
-  categories,
   darkMode,
   card,
   border,
@@ -16,230 +11,589 @@ const AppShopping = ({
   input,
   formatNumber
 }) => {
-  const [shoppingForm, setShoppingForm] = useState({
-    item: '',
+  const [shoppingLists, setShoppingLists] = useState({});
+  const [selectedListId, setSelectedListId] = useState(null);
+  const [newListName, setNewListName] = useState('');
+  const [showCreateList, setShowCreateList] = useState(false);
+  const [editingListId, setEditingListId] = useState(null);
+  const [editingListName, setEditingListName] = useState('');
+
+  const [productForm, setProductForm] = useState({
+    nombre: '',
     cantidad: 1,
-    categoria: 'alimentacion',
-    precio: '',
-    comprado: false
+    precio: ''
   });
 
-  const [eventForm, setEventForm] = useState({
-    categoria: 'Cita',
-    titulo: '',
-    fecha_inicio: new Date().toISOString().split('T')[0],
-    ubicacion: ''
-  });
-  const [editingEventId, setEditingEventId] = useState(null);
-
-  const addShoppingItem = async () => {
-    if (!shoppingForm.item) {
-      alert('Por favor ingresa un nombre para el item');
+  const createNewList = async () => {
+    if (!newListName.trim()) {
+      alert('Por favor ingresa un nombre para la lista');
       return;
     }
-    
+
     try {
       const { data: { user: currentUser } } = await supabase.auth.getUser();
       if (!currentUser) throw new Error('No hay usuario autenticado');
-      
-      const newId = `shop_${Date.now()}`;
-      const newItem = { 
-        id: newId, 
-        ...shoppingForm, 
+
+      const newId = `list_${Date.now()}`;
+      const newList = {
+        id: newId,
+        nombre: newListName,
         user_id: currentUser.id,
-        created_at: new Date().toISOString() 
+        created_at: new Date().toISOString(),
+        productos: []
       };
-      
+
       const { error } = await supabase
-        .from('shopping_list')
-        .upsert(newItem);
-      
+        .from('shopping_lists')
+        .upsert(newList);
+
       if (error) throw error;
-      
-      setShoppingList(prev => ({ ...prev, [newId]: newItem }));
-      setShoppingForm({ item: '', cantidad: 1, categoria: 'alimentacion', precio: '', comprado: false });
+
+      setShoppingLists(prev => ({ ...prev, [newId]: newList }));
+      setSelectedListId(newId);
+      setNewListName('');
+      setShowCreateList(false);
     } catch (error) {
-      console.error('Error guardando item de compra:', error);
-      alert('Error al guardar el item: ' + error.message);
+      console.error('Error creando lista:', error);
+      alert('Error al crear la lista: ' + error.message);
     }
   };
 
-  const toggleShoppingItem = async (id) => {
+  const deleteList = async (listId) => {
+    if (!window.confirm('¿Estás seguro de que quieres eliminar esta lista?')) return;
+
     try {
-      const updatedItem = { ...shoppingList[id], comprado: !shoppingList[id].comprado };
-      
-      const { error } = await supabase
-        .from('shopping_list')
-        .update({ comprado: updatedItem.comprado })
-        .eq('id', id);
-      
-      if (error) throw error;
-      
-      setShoppingList(prev => ({ ...prev, [id]: updatedItem }));
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      await supabase
+        .from('shopping_lists')
+        .delete()
+        .eq('id', listId)
+        .eq('user_id', currentUser.id);
+
+      const newLists = { ...shoppingLists };
+      delete newLists[listId];
+      setShoppingLists(newLists);
+      if (selectedListId === listId) {
+        setSelectedListId(null);
+      }
     } catch (error) {
-      console.error('Error actualizando item:', error);
-      alert('Error al actualizar el item: ' + error.message);
+      console.error('Error eliminando lista:', error);
+      alert('Error al eliminar la lista');
     }
   };
 
-  const deleteShoppingItem = async (id) => {
-    try {
-      await supabase.from('shopping_list').delete().eq('id', id);
-      const newList = {...shoppingList}; 
-      delete newList[id]; 
-      setShoppingList(newList); 
-    } catch (error) {
-      console.error('Error eliminando item:', error);
-      alert('Error al eliminar el item');
-    }
-  };
-
-  const addEvent = async () => {
-    if (!eventForm.titulo) {
-      alert('Por favor ingresa un título para el evento');
+  const updateListName = async (listId) => {
+    if (!editingListName.trim()) {
+      alert('Por favor ingresa un nombre');
       return;
     }
-    
+
+    try {
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      
+      const updatedList = { ...shoppingLists[listId], nombre: editingListName };
+      
+      const { error } = await supabase
+        .from('shopping_lists')
+        .update({ nombre: editingListName })
+        .eq('id', listId)
+        .eq('user_id', currentUser.id);
+
+      if (error) throw error;
+
+      setShoppingLists(prev => ({ ...prev, [listId]: updatedList }));
+      setEditingListId(null);
+      setEditingListName('');
+    } catch (error) {
+      console.error('Error actualizando lista:', error);
+      alert('Error al actualizar la lista');
+    }
+  };
+
+  const addProduct = async () => {
+    if (!selectedListId) {
+      alert('Por favor selecciona una lista');
+      return;
+    }
+
+    if (!productForm.nombre.trim() || !productForm.precio) {
+      alert('Por favor completa todos los campos');
+      return;
+    }
+
     try {
       const { data: { user: currentUser } } = await supabase.auth.getUser();
       if (!currentUser) throw new Error('No hay usuario autenticado');
+
+      const currentList = shoppingLists[selectedListId];
+      const newProductId = `prod_${Date.now()}`;
       
-      const newId = editingEventId || `event_${Date.now()}`;
-      const newEvent = { 
-        id: newId, 
-        titulo: eventForm.titulo,
-        categoria: eventForm.categoria,
-        fecha_inicio: eventForm.fecha_inicio,
-        ubicacion: eventForm.ubicacion,
-        user_id: currentUser.id,
-        created_at: new Date().toISOString() 
+      const newProduct = {
+        id: newProductId,
+        nombre: productForm.nombre,
+        cantidad: parseInt(productForm.cantidad),
+        precio: parseFloat(productForm.precio),
+        comprado: false
       };
-      
-      console.log('🔄 Guardando evento:', newEvent);
-      
+
+      const updatedProducts = [...(currentList.productos || []), newProduct];
+      const updatedList = { ...currentList, productos: updatedProducts };
+
       const { error } = await supabase
-        .from('events')
-        .upsert(newEvent);
-      
+        .from('shopping_lists')
+        .update({ productos: updatedProducts })
+        .eq('id', selectedListId)
+        .eq('user_id', currentUser.id);
+
       if (error) throw error;
-      
-      setEvents(prev => ({ ...prev, [newId]: newEvent }));
-      setEventForm({ 
-        categoria: 'Cita', 
-        titulo: '', 
-        fecha_inicio: new Date().toISOString().split('T')[0],
-        ubicacion: '' 
-      });
-      setEditingEventId(null);
-      
-      console.log('✅ Evento guardado exitosamente');
+
+      setShoppingLists(prev => ({ ...prev, [selectedListId]: updatedList }));
+      setProductForm({ nombre: '', cantidad: 1, precio: '' });
     } catch (error) {
-      console.error('❌ Error guardando evento:', error);
-      alert('Error al guardar el evento: ' + error.message);
+      console.error('Error agregando producto:', error);
+      alert('Error al agregar producto: ' + error.message);
     }
   };
 
-  const deleteEvent = async (id) => {
+  const toggleProduct = async (productId) => {
     try {
-      await supabase.from('events').delete().eq('id', id);
-      const newEvents = {...events}; 
-      delete newEvents[id]; 
-      setEvents(newEvents); 
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      const currentList = shoppingLists[selectedListId];
+      
+      const updatedProducts = currentList.productos.map(p =>
+        p.id === productId ? { ...p, comprado: !p.comprado } : p
+      );
+
+      const { error } = await supabase
+        .from('shopping_lists')
+        .update({ productos: updatedProducts })
+        .eq('id', selectedListId)
+        .eq('user_id', currentUser.id);
+
+      if (error) throw error;
+
+      setShoppingLists(prev => ({
+        ...prev,
+        [selectedListId]: { ...currentList, productos: updatedProducts }
+      }));
     } catch (error) {
-      console.error('Error eliminando evento:', error);
-      alert('Error al eliminar el evento');
+      console.error('Error actualizando producto:', error);
     }
   };
+
+  const deleteProduct = async (productId) => {
+    try {
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      const currentList = shoppingLists[selectedListId];
+      
+      const updatedProducts = currentList.productos.filter(p => p.id !== productId);
+
+      const { error } = await supabase
+        .from('shopping_lists')
+        .update({ productos: updatedProducts })
+        .eq('id', selectedListId)
+        .eq('user_id', currentUser.id);
+
+      if (error) throw error;
+
+      setShoppingLists(prev => ({
+        ...prev,
+        [selectedListId]: { ...currentList, productos: updatedProducts }
+      }));
+    } catch (error) {
+      console.error('Error eliminando producto:', error);
+    }
+  };
+
+  const getListTotal = (listId) => {
+    const list = shoppingLists[listId];
+    if (!list || !list.productos) return 0;
+    return list.productos.reduce((sum, p) => sum + (p.precio * p.cantidad), 0);
+  };
+
+  const getListStats = (listId) => {
+    const list = shoppingLists[listId];
+    if (!list || !list.productos) return { total: 0, comprado: 0, pendiente: 0 };
+    
+    const total = list.productos.reduce((sum, p) => sum + (p.precio * p.cantidad), 0);
+    const compradoItems = list.productos.filter(p => p.comprado).length;
+    
+    return {
+      total,
+      comprado: compradoItems,
+      pendiente: list.productos.length - compradoItems
+    };
+  };
+
+  const currentList = selectedListId ? shoppingLists[selectedListId] : null;
+  const stats = currentList ? getListStats(selectedListId) : null;
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
-      {/* Compras */}
-      <div>
-        <div style={{ backgroundColor: card, border: `1px solid ${border}`, padding: '1.5rem', borderRadius: '1rem', marginBottom: '1.5rem' }}>
-          <h2 style={{ color: text, margin: '0 0 1rem 0' }}>Agregar Item a Compras</h2>
-          <input type="text" placeholder="Nombre del item" value={shoppingForm.item} onChange={(e) => setShoppingForm({ ...shoppingForm, item: e.target.value })} style={{ width: '100%', padding: '0.75rem', border: `1px solid ${border}`, borderRadius: '0.5rem', backgroundColor: input, color: text, marginBottom: '1rem', boxSizing: 'border-box' }} />
-          <input type="number" placeholder="Cantidad" value={shoppingForm.cantidad} onChange={(e) => setShoppingForm({ ...shoppingForm, cantidad: e.target.value })} style={{ width: '100%', padding: '0.75rem', border: `1px solid ${border}`, borderRadius: '0.5rem', backgroundColor: input, color: text, marginBottom: '1rem', boxSizing: 'border-box' }} />
-          <select value={shoppingForm.categoria} onChange={(e) => setShoppingForm({ ...shoppingForm, categoria: e.target.value })} style={{ width: '100%', padding: '0.75rem', border: `1px solid ${border}`, borderRadius: '0.5rem', backgroundColor: input, color: text, marginBottom: '1rem', boxSizing: 'border-box' }}>
-            {categories.map(cat => <option key={cat.id} value={cat.id}>{cat.icon} {cat.name}</option>)}
-          </select>
-          <input type="number" placeholder="Precio estimado" value={shoppingForm.precio} onChange={(e) => setShoppingForm({ ...shoppingForm, precio: e.target.value })} style={{ width: '100%', padding: '0.75rem', border: `1px solid ${border}`, borderRadius: '0.5rem', backgroundColor: input, color: text, marginBottom: '1rem', boxSizing: 'border-box' }} />
-          <button onClick={addShoppingItem} style={{ width: '100%', padding: '0.75rem', backgroundColor: '#f59e0b', color: 'white', border: 'none', borderRadius: '0.5rem', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
-            <Plus size={18} />Agregar a Lista
-          </button>
-        </div>
+    <div style={{ display: 'grid', gridTemplateColumns: '300px 1fr', gap: '1.5rem' }}>
+      {/* Sidebar - Mis Listas */}
+      <div style={{ backgroundColor: card, border: `1px solid ${border}`, padding: '1.5rem', borderRadius: '1rem', height: 'fit-content' }}>
+        <h2 style={{ color: text, margin: '0 0 1rem 0', fontSize: '1.2rem' }}>Mis Listas</h2>
 
-        <div style={{ backgroundColor: card, border: `1px solid ${border}`, padding: '1.5rem', borderRadius: '1rem' }}>
-          <h2 style={{ color: text, margin: '0 0 1rem 0' }}>Lista de Compras</h2>
-          {Object.values(shoppingList).length > 0 ? (
-            <div>
-              <div style={{ marginBottom: '1rem', padding: '0.75rem', backgroundColor: darkMode ? '#2a2a2a' : '#f9f9f9', borderRadius: '0.5rem' }}>
-                <div style={{ fontSize: '0.875rem', color: textSec }}>Total estimado: </div>
-                <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#f59e0b' }}>
-                  ${formatNumber(Object.values(shoppingList).reduce((sum, item) => sum + (parseFloat(item.precio) || 0) * item.cantidad, 0))}
-                </div>
-              </div>
-              {Object.values(shoppingList).map(item => {
-                const cat = categories.find(c => c.id === item.categoria);
-                return (
-                  <div key={item.id} style={{ padding: '1rem', backgroundColor: item.comprado ? (darkMode ? '#1a3a1a' : '#f0fdf4') : (darkMode ? '#2a2a2a' : '#f9f9f9'), borderRadius: '0.5rem', marginBottom: '0.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', opacity: item.comprado ? 0.6 : 1 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                      <input type="checkbox" checked={item.comprado} onChange={() => toggleShoppingItem(item.id)} style={{ width: '20px', height: '20px', cursor: 'pointer' }} />
-                      <div>
-                        <div style={{ fontWeight: 'bold', color: text, textDecoration: item.comprado ? 'line-through' : 'none' }}>{item.item}</div>
-                        <div style={{ fontSize: '0.75rem', color: textSec }}>Cantidad: {item.cantidad} • {cat?.icon} {cat?.name} • ${formatNumber(parseFloat(item.precio || 0))}</div>
-                      </div>
-                    </div>
-                    <button onClick={() => deleteShoppingItem(item.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer' }}>
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <p style={{ textAlign: 'center', color: textSec, paddingTop: '2rem' }}>No hay items en la lista</p>
-          )}
-        </div>
-      </div>
+        <button
+          onClick={() => setShowCreateList(!showCreateList)}
+          style={{
+            width: '100%',
+            padding: '0.75rem',
+            backgroundColor: '#10b981',
+            color: 'white',
+            border: 'none',
+            borderRadius: '0.5rem',
+            cursor: 'pointer',
+            fontWeight: '600',
+            marginBottom: '1rem',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '0.5rem'
+          }}
+        >
+          <Plus size={18} /> Nueva Lista
+        </button>
 
-      {/* Eventos */}
-      <div>
-        <div style={{ backgroundColor: card, border: `1px solid ${border}`, padding: '1.5rem', borderRadius: '1rem', marginBottom: '1.5rem' }}>
-          <h2 style={{ color: text, margin: '0 0 1rem 0' }}>Nuevo Evento</h2>
-          <select value={eventForm.categoria} onChange={(e) => setEventForm({ ...eventForm, categoria: e.target.value })} style={{ width: '100%', padding: '0.75rem', border: `1px solid ${border}`, borderRadius: '0.5rem', backgroundColor: input, color: text, marginBottom: '1rem', boxSizing: 'border-box' }}>
-            <option value="Cita">Cita</option>
-            <option value="Reunión">Reunión</option>
-            <option value="Cumpleaños">Cumpleaños</option>
-          </select>
-          <input type="text" placeholder="Título" value={eventForm.titulo} onChange={(e) => setEventForm({ ...eventForm, titulo: e.target.value })} style={{ width: '100%', padding: '0.75rem', border: `1px solid ${border}`, borderRadius: '0.5rem', backgroundColor: input, color: text, marginBottom: '1rem', boxSizing: 'border-box' }} />
-          <input type="date" value={eventForm.fecha_inicio} onChange={(e) => setEventForm({ ...eventForm, fecha_inicio: e.target.value })} style={{ width: '100%', padding: '0.75rem', border: `1px solid ${border}`, borderRadius: '0.5rem', backgroundColor: input, color: text, marginBottom: '1rem', boxSizing: 'border-box' }} />
-          <input type="text" placeholder="Ubicación" value={eventForm.ubicacion} onChange={(e) => setEventForm({ ...eventForm, ubicacion: e.target.value })} style={{ width: '100%', padding: '0.75rem', border: `1px solid ${border}`, borderRadius: '0.5rem', backgroundColor: input, color: text, marginBottom: '1rem', boxSizing: 'border-box' }} />
-          <button onClick={addEvent} style={{ width: '100%', padding: '0.75rem', backgroundColor: '#7c3aed', color: 'white', border: 'none', borderRadius: '0.5rem', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
-            <Plus size={18} />Agregar Evento
-          </button>
-        </div>
+        {showCreateList && (
+          <div style={{ marginBottom: '1rem' }}>
+            <input
+              type="text"
+              placeholder="Nombre de la lista"
+              value={newListName}
+              onChange={(e) => setNewListName(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '0.75rem',
+                border: `1px solid ${border}`,
+                borderRadius: '0.5rem',
+                backgroundColor: input,
+                color: text,
+                marginBottom: '0.5rem',
+                boxSizing: 'border-box'
+              }}
+            />
+            <button
+              onClick={createNewList}
+              style={{
+                width: '100%',
+                padding: '0.5rem',
+                backgroundColor: '#2563eb',
+                color: 'white',
+                border: 'none',
+                borderRadius: '0.5rem',
+                cursor: 'pointer',
+                fontWeight: '600',
+                marginBottom: '0.5rem'
+              }}
+            >
+              Crear
+            </button>
+            <button
+              onClick={() => setShowCreateList(false)}
+              style={{
+                width: '100%',
+                padding: '0.5rem',
+                backgroundColor: '#6b7280',
+                color: 'white',
+                border: 'none',
+                borderRadius: '0.5rem',
+                cursor: 'pointer'
+              }}
+            >
+              Cancelar
+            </button>
+          </div>
+        )}
 
-        <div style={{ backgroundColor: card, border: `1px solid ${border}`, padding: '1.5rem', borderRadius: '1rem' }}>
-          <h2 style={{ color: text, margin: '0 0 1rem 0' }}>Eventos</h2>
-          <div style={{ display: 'grid', gap: '1rem' }}>
-            {Object.values(events).map(e => (
-              <div key={e.id} style={{ backgroundColor: darkMode ? '#2a2a2a' : '#f9f9f9', border: `1px solid ${border}`, borderRadius: '0.5rem', padding: '1rem', display: 'flex', justifyContent: 'space-between' }}>
-                <div>
-                  <h3 style={{ color: text, margin: '0 0 0.5rem 0' }}>{e.titulo}</h3>
-                  <p style={{ color: textSec, margin: '0.25rem 0', fontSize: '0.875rem' }}>{e.categoria}</p>
-                  <p style={{ color: textSec, margin: '0.5rem 0 0 0', fontSize: '0.875rem' }}>📅 {e.fecha_inicio}</p>
-                  {e.ubicacion && <p style={{ color: textSec, margin: '0.25rem 0', fontSize: '0.875rem' }}>📍 {e.ubicacion}</p>}
-                </div>
-                <div style={{ display: 'flex', gap: '0.5rem' }}>
-                  <button onClick={() => deleteEvent(e.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer' }}>
-                    <Trash2 size={16} />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '500px', overflowY: 'auto' }}>
+          {Object.entries(shoppingLists).map(([id, list]) => (
+            <div
+              key={id}
+              style={{
+                padding: '1rem',
+                backgroundColor: selectedListId === id ? '#2563eb' : (darkMode ? '#2a2a2a' : '#f9f9f9'),
+                borderRadius: '0.5rem',
+                cursor: 'pointer',
+                border: selectedListId === id ? '2px solid #2563eb' : `1px solid ${border}`,
+                color: selectedListId === id ? 'white' : text
+              }}
+              onClick={() => setSelectedListId(id)}
+            >
+              {editingListId === id ? (
+                <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                  <input
+                    type="text"
+                    value={editingListName}
+                    onChange={(e) => setEditingListName(e.target.value)}
+                    style={{
+                      flex: 1,
+                      padding: '0.5rem',
+                      border: `1px solid ${border}`,
+                      borderRadius: '0.25rem',
+                      backgroundColor: input,
+                      color: text
+                    }}
+                  />
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      updateListName(id);
+                    }}
+                    style={{
+                      padding: '0.5rem',
+                      backgroundColor: '#10b981',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '0.25rem',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <Check size={16} />
                   </button>
                 </div>
+              ) : (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                  <h3 style={{ margin: 0, fontWeight: '600' }}>{list.nombre}</h3>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setEditingListId(id);
+                      setEditingListName(list.nombre);
+                    }}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                      padding: '0.25rem'
+                    }}
+                  >
+                    <Edit2 size={14} color={selectedListId === id ? 'white' : text} />
+                  </button>
+                </div>
+              )}
+              <div style={{ fontSize: '0.875rem', marginBottom: '0.5rem' }}>
+                Total: ${formatNumber(getListTotal(id))}
               </div>
-            ))}
+              <div style={{ fontSize: '0.75rem', opacity: 0.8 }}>
+                {list.productos?.length || 0} productos
+              </div>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  deleteList(id);
+                }}
+                style={{
+                  width: '100%',
+                  padding: '0.5rem',
+                  backgroundColor: selectedListId === id ? 'rgba(239, 68, 68, 0.8)' : '#ef4444',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '0.25rem',
+                  cursor: 'pointer',
+                  marginTop: '0.5rem',
+                  fontSize: '0.75rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '0.25rem'
+                }}
+              >
+                <Trash2 size={12} /> Eliminar
+              </button>
+            </div>
+          ))}
+        </div>
+
+        {Object.keys(shoppingLists).length > 0 && (
+          <div style={{
+            marginTop: '1rem',
+            padding: '1rem',
+            backgroundColor: darkMode ? '#2a2a2a' : '#f9f9f9',
+            borderRadius: '0.5rem',
+            borderTop: `1px solid ${border}`
+          }}>
+            <h3 style={{ color: text, margin: '0 0 0.5rem 0', fontSize: '0.9rem' }}>Comparativa de Listas</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: '0.8rem', color: textSec }}>
+              {Object.entries(shoppingLists).map(([id, list]) => (
+                <div key={id} style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>{list.nombre}:</span>
+                  <span style={{ fontWeight: 'bold', color: text }}>
+                    ${formatNumber(getListTotal(id))}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Main Content - Detalles de la Lista */}
+      {currentList ? (
+        <div style={{ backgroundColor: card, border: `1px solid ${border}`, padding: '1.5rem', borderRadius: '1rem' }}>
+          <div style={{ marginBottom: '1.5rem', paddingBottom: '1rem', borderBottom: `1px solid ${border}` }}>
+            <h2 style={{ color: text, margin: '0 0 1rem 0' }}>{currentList.nombre}</h2>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem' }}>
+              <div style={{ padding: '1rem', backgroundColor: darkMode ? '#2a2a2a' : '#f9f9f9', borderRadius: '0.5rem' }}>
+                <p style={{ color: textSec, fontSize: '0.875rem', margin: '0 0 0.5rem 0' }}>Total</p>
+                <p style={{ fontSize: '1.5rem', fontWeight: 'bold', margin: 0, color: '#10b981' }}>
+                  ${formatNumber(stats.total)}
+                </p>
+              </div>
+              <div style={{ padding: '1rem', backgroundColor: darkMode ? '#2a2a2a' : '#f9f9f9', borderRadius: '0.5rem' }}>
+                <p style={{ color: textSec, fontSize: '0.875rem', margin: '0 0 0.5rem 0' }}>Comprados</p>
+                <p style={{ fontSize: '1.5rem', fontWeight: 'bold', margin: 0, color: '#3b82f6' }}>
+                  {stats.comprado}/{currentList.productos?.length || 0}
+                </p>
+              </div>
+              <div style={{ padding: '1rem', backgroundColor: darkMode ? '#2a2a2a' : '#f9f9f9', borderRadius: '0.5rem' }}>
+                <p style={{ color: textSec, fontSize: '0.875rem', margin: '0 0 0.5rem 0' }}>Pendientes</p>
+                <p style={{ fontSize: '1.5rem', fontWeight: 'bold', margin: 0, color: '#ef4444' }}>
+                  {stats.pendiente}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ marginBottom: '1.5rem', paddingBottom: '1rem', borderBottom: `1px solid ${border}` }}>
+            <h3 style={{ color: text, margin: '0 0 1rem 0' }}>Agregar Producto</h3>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.75rem', marginBottom: '1rem' }}>
+              <input
+                type="text"
+                placeholder="Nombre del producto"
+                value={productForm.nombre}
+                onChange={(e) => setProductForm({ ...productForm, nombre: e.target.value })}
+                style={{
+                  padding: '0.75rem',
+                  border: `1px solid ${border}`,
+                  borderRadius: '0.5rem',
+                  backgroundColor: input,
+                  color: text,
+                  boxSizing: 'border-box'
+                }}
+              />
+              <input
+                type="number"
+                placeholder="Cantidad"
+                value={productForm.cantidad}
+                onChange={(e) => setProductForm({ ...productForm, cantidad: parseInt(e.target.value) || 1 })}
+                style={{
+                  padding: '0.75rem',
+                  border: `1px solid ${border}`,
+                  borderRadius: '0.5rem',
+                  backgroundColor: input,
+                  color: text,
+                  boxSizing: 'border-box'
+                }}
+              />
+              <input
+                type="number"
+                placeholder="Precio unitario"
+                value={productForm.precio}
+                onChange={(e) => setProductForm({ ...productForm, precio: e.target.value })}
+                style={{
+                  padding: '0.75rem',
+                  border: `1px solid ${border}`,
+                  borderRadius: '0.5rem',
+                  backgroundColor: input,
+                  color: text,
+                  boxSizing: 'border-box'
+                }}
+              />
+            </div>
+            <button
+              onClick={addProduct}
+              style={{
+                width: '100%',
+                padding: '0.75rem',
+                backgroundColor: '#2563eb',
+                color: 'white',
+                border: 'none',
+                borderRadius: '0.5rem',
+                cursor: 'pointer',
+                fontWeight: '600',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '0.5rem'
+              }}
+            >
+              <Plus size={18} /> Agregar Producto
+            </button>
+          </div>
+
+          <div>
+            <h3 style={{ color: text, margin: '0 0 1rem 0' }}>Productos</h3>
+            {currentList.productos && currentList.productos.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                {currentList.productos.map(product => (
+                  <div
+                    key={product.id}
+                    style={{
+                      padding: '1rem',
+                      backgroundColor: product.comprado ? (darkMode ? '#1a3a1a' : '#f0fdf4') : (darkMode ? '#2a2a2a' : '#f9f9f9'),
+                      borderRadius: '0.5rem',
+                      border: `1px solid ${border}`,
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      opacity: product.comprado ? 0.6 : 1
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flex: 1 }}>
+                      <input
+                        type="checkbox"
+                        checked={product.comprado}
+                        onChange={() => toggleProduct(product.id)}
+                        style={{ width: '20px', height: '20px', cursor: 'pointer' }}
+                      />
+                      <div>
+                        <p style={{ color: text, margin: 0, textDecoration: product.comprado ? 'line-through' : 'none', fontWeight: '500' }}>
+                          {product.nombre}
+                        </p>
+                        <p style={{ color: textSec, margin: '0.25rem 0 0 0', fontSize: '0.875rem' }}>
+                          {product.cantidad}x @ ${formatNumber(product.precio)} = ${formatNumber(product.cantidad * product.precio)}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => deleteProduct(product.id)}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        cursor: 'pointer',
+                        color: '#ef4444',
+                        padding: '0.5rem'
+                      }}
+                    >
+                      <Trash2 size={18} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p style={{ textAlign: 'center', color: textSec, padding: '2rem' }}>
+                No hay productos en esta lista
+              </p>
+            )}
           </div>
         </div>
-      </div>
+      ) : (
+        <div style={{
+          backgroundColor: card,
+          border: `1px solid ${border}`,
+          padding: '1.5rem',
+          borderRadius: '1rem',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          minHeight: '400px'
+        }}>
+          <p style={{ color: textSec, textAlign: 'center', fontSize: '1.1rem' }}>
+            👈 Crea o selecciona una lista para empezar
+          </p>
+        </div>
+      )}
     </div>
   );
 };
