@@ -21,7 +21,8 @@ const AppEvents = ({
     completado: false,
     recordatorio_habilitado: false,
     recordatorio_fecha: new Date().toISOString().split('T')[0],
-    recordatorio_tipo: 'email' // 'email' o 'whatsapp'
+    recordatorio_tipo: 'email',
+    phone_number: ''
   });
   const [editingEventId, setEditingEventId] = useState(null);
   const [showForm, setShowForm] = useState(false);
@@ -128,7 +129,8 @@ const AppEvents = ({
       completado: false,
       recordatorio_habilitado: false,
       recordatorio_fecha: new Date().toISOString().split('T')[0],
-      recordatorio_tipo: 'email'
+      recordatorio_tipo: 'email',
+      phone_number: ''
     });
     setEditingEventId(null);
   };
@@ -145,11 +147,13 @@ const AppEvents = ({
   const toggleCompletado = async (event) => {
     try {
       const { data: { user: currentUser } } = await supabase.auth.getUser();
+      if (!currentUser) throw new Error('No hay usuario autenticado');
+
       const updatedEvent = { ...event, completado: !event.completado };
 
       const { error } = await supabase
         .from('events')
-        .update({ completado: updatedEvent.completado })
+        .update({ completado: updatedEvent.completado, updated_at: new Date().toISOString() })
         .eq('id', event.id)
         .eq('user_id', currentUser.id);
 
@@ -161,6 +165,7 @@ const AppEvents = ({
       }));
     } catch (error) {
       console.error('Error actualizando evento:', error);
+      alert('Error: ' + error.message);
     }
   };
 

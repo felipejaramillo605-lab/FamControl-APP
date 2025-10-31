@@ -69,7 +69,7 @@ const AppShopping = ({
     try {
       const { data: { user: currentUser } } = await supabase.auth.getUser();
       await supabase
-        .from('shopping_list')
+        .from('shopping_lists')
         .delete()
         .eq('id', listId)
         .eq('user_id', currentUser.id);
@@ -94,7 +94,7 @@ const AppShopping = ({
       const updatedList = { ...shoppingLists[listId], nombre: editingListName };
 
       const { error } = await supabase
-        .from('shopping_list')
+        .from('shopping_lists')
         .update({ nombre: editingListName })
         .eq('id', listId)
         .eq('user_id', currentUser.id);
@@ -137,7 +137,7 @@ const AppShopping = ({
       const updatedList = { ...currentList, productos: updatedProducts };
 
       const { error } = await supabase
-        .from('shopping_list')
+        .from('shopping_lists')
         .update({ productos: updatedProducts })
         .eq('id', selectedListId)
         .eq('user_id', currentUser.id);
@@ -172,39 +172,45 @@ const AppShopping = ({
 
     try {
       const formData = new FormData();
+      formData.append('filename', file.name);
       formData.append('file', file);
 
-      // Usar Google Cloud Vision API o servicio OCR gratuito
+      // Usar Tesseract.js vía servidor o API OCR.space con mejor configuración
       const response = await fetch('https://api.ocr.space/parse', {
         method: 'POST',
-        body: formData,
-        headers: {
-          'apikey': '63687991272122' // API key gratuita OCR.space
-        }
+        body: formData
       });
 
       if (!response.ok) throw new Error('Error en OCR');
 
       const data = await response.json();
       
-      if (!data.IsErroredOnProcessing) {
-        const ocrText = data.ParsedText;
+      if (data.IsErroredOnProcessing === false) {
+        const ocrText = data.ParsedText || '';
+        
+        if (!ocrText || ocrText.trim().length < 10) {
+          setOcrMessage('⚠️ No se pudo leer texto de la factura. Intenta con una imagen más clara');
+          setOcrLoading(false);
+          return;
+        }
+        
         const products = extractProductsFromOCR(ocrText);
 
         if (products.length > 0) {
           await addProductsFromOCR(products);
           setOcrMessage(`✅ Se agregaron ${products.length} producto(s) a la lista`);
         } else {
-          setOcrMessage('⚠️ No se encontraron productos en la factura');
+          // Mostrar texto extraído para debug
+          setOcrMessage(`⚠️ Texto extraído pero sin productos reconocibles. Agrega productos manualmente.`);
         }
       } else {
-        setOcrMessage('❌ Error procesando la imagen');
+        setOcrMessage('❌ Error: ' + (data.ErrorMessage || 'No se pudo procesar'));
       }
 
-      setTimeout(() => setOcrMessage(''), 3000);
+      setTimeout(() => setOcrMessage(''), 4000);
     } catch (error) {
       console.error('Error en OCR:', error);
-      setOcrMessage('❌ Error al procesar la factura');
+      setOcrMessage('❌ Error al procesar: Intenta con otra imagen');
     } finally {
       setOcrLoading(false);
       setOcrFile(null);
@@ -213,27 +219,50 @@ const AppShopping = ({
 
   const extractProductsFromOCR = (text) => {
     const products = [];
-    // Patrón simple para detectar: nombre cantidad precio
     const lines = text.split('\n');
 
-    for (const line of lines) {
-      // Buscar patrones como "Producto 2 5000" o "Leche 1 3500"
-      const match = line.match(/([a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+?)\s+(\d+(?:\.\d+)?)\s+(\d+(?:[.,]\d{1,2})?)/);
-      
-      if (match) {
-        const nombre = match[1].trim();
-        const cantidad = parseFloat(match[2]);
-        const precio = parseFloat(match[3].replace(',', '.'));
+    // Patrones mejorados para detectar productos
+    // Busca: nombre cantidad precio (puede variar formato)
+    const patterns = [
+      /([a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+?)\s+(\d+(?:[.,]\d+)?)\s+(\d+(?:[.,]\d{1,2})?)(?:\s|$)/g, // nombre cantidad precio
+      /([a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+?)\s+(\d+)\s+\$?\s*(\d+(?:[.,]\d{1,2})?)/g, // con $
+    ];
 
-        // Validar que tenga sentido
-        if (nombre.length > 2 && cantidad > 0 && precio > 0) {
-          products.push({ nombre, cantidad, precio });
+    for (const line of lines) {
+      if (line.trim().length < 3) continue;
+
+      for (const pattern of patterns) {
+        let match;
+        pattern.lastIndex = 0;
+        
+        while ((match = pattern.exec(line)) !== null) {
+          const nombre = match[1].trim();
+          const cantidad = parseFloat(match[2].replace(',', '.'));
+          const precio = parseFloat(match[3].replace(',', '.'));
+
+          // Validación mejorada
+          if (
+            nombre.length > 2 && 
+            nombre.length < 100 &&
+            cantidad > 0 && 
+            cantidad < 1000 &&
+            precio > 0 && 
+            precio < 1000000 &&
+            !nombre.match(/^(fecha|total|item|cantidad|precio|iva|subtotal)/i)
+          ) {
+            products.push({ nombre, cantidad, precio });
+            break;
+          }
         }
       }
     }
 
     // Remover duplicados
-    return Array.from(new Map(products.map(p => [p.nombre.toLowerCase(), p])).values());
+    const uniqueProducts = Array.from(
+      new Map(products.map(p => [p.nombre.toLowerCase().trim(), p])).values()
+    );
+
+    return uniqueProducts.slice(0, 20); // Máximo 20 productos
   };
 
   const addProductsFromOCR = async (products) => {
