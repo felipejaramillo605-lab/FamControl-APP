@@ -111,7 +111,7 @@ const AppBudgets = ({
   };
 
   const handleDeleteBudget = async (budgetId) => {
-    if (!confirm('¿Estás seguro de que quieres eliminar este presupuesto?')) return;
+    if (!window.confirm('¿Estás seguro de que quieres eliminar este presupuesto?')) return;
     
     try {
       setCustomBudgets(prev => {
