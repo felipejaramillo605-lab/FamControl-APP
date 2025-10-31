@@ -50,15 +50,16 @@ const AppEvents = ({
       const newId = editingEventId || `event_${Date.now()}`;
       const newEvent = {
         id: newId,
-        titulo: eventForm.titulo,
-        categoria: eventForm.categoria,
+        titulo: eventForm.titulo || 'Sin título',
+        categoria: eventForm.categoria || 'reunion',
         fecha_inicio: eventForm.fecha_inicio,
-        ubicacion: eventForm.ubicacion,
-        observaciones: eventForm.observaciones,
-        completado: eventForm.completado,
-        recordatorio_habilitado: eventForm.recordatorio_habilitado,
-        recordatorio_fecha: eventForm.recordatorio_fecha,
-        recordatorio_tipo: eventForm.recordatorio_tipo,
+        ubicacion: eventForm.ubicacion || '',
+        observaciones: eventForm.observaciones || '',
+        completado: Boolean(eventForm.completado),
+        recordatorio_habilitado: Boolean(eventForm.recordatorio_habilitado),
+        recordatorio_fecha: eventForm.recordatorio_fecha || null,
+        recordatorio_tipo: eventForm.recordatorio_tipo || 'email',
+        phone_number: eventForm.phone_number || '',
         user_id: currentUser.id,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
@@ -145,15 +146,24 @@ const AppEvents = ({
   };
 
   const toggleCompletado = async (event) => {
+    if (!event || !event.id) {
+      console.error('Evento inválido');
+      return;
+    }
+
     try {
       const { data: { user: currentUser } } = await supabase.auth.getUser();
       if (!currentUser) throw new Error('No hay usuario autenticado');
 
-      const updatedEvent = { ...event, completado: !event.completado };
+      const nuevoEstado = !Boolean(event.completado);
+      const updatedEvent = { ...event, completado: nuevoEstado };
 
       const { error } = await supabase
         .from('events')
-        .update({ completado: updatedEvent.completado, updated_at: new Date().toISOString() })
+        .update({ 
+          completado: nuevoEstado,
+          updated_at: new Date().toISOString() 
+        })
         .eq('id', event.id)
         .eq('user_id', currentUser.id);
 

@@ -161,60 +161,13 @@ const AppShopping = ({
       return;
     }
 
-    const validTypes = ['image/png', 'image/jpeg', 'application/pdf'];
-    if (!validTypes.includes(file.type)) {
-      alert('Por favor sube un archivo PNG, JPG o PDF');
-      return;
-    }
-
     setOcrLoading(true);
-    setOcrMessage('');
-
-    try {
-      const formData = new FormData();
-      formData.append('filename', file.name);
-      formData.append('file', file);
-
-      // Usar Tesseract.js vía servidor o API OCR.space con mejor configuración
-      const response = await fetch('https://api.ocr.space/parse', {
-        method: 'POST',
-        body: formData
-      });
-
-      if (!response.ok) throw new Error('Error en OCR');
-
-      const data = await response.json();
-      
-      if (data.IsErroredOnProcessing === false) {
-        const ocrText = data.ParsedText || '';
-        
-        if (!ocrText || ocrText.trim().length < 10) {
-          setOcrMessage('⚠️ No se pudo leer texto de la factura. Intenta con una imagen más clara');
-          setOcrLoading(false);
-          return;
-        }
-        
-        const products = extractProductsFromOCR(ocrText);
-
-        if (products.length > 0) {
-          await addProductsFromOCR(products);
-          setOcrMessage(`✅ Se agregaron ${products.length} producto(s) a la lista`);
-        } else {
-          // Mostrar texto extraído para debug
-          setOcrMessage(`⚠️ Texto extraído pero sin productos reconocibles. Agrega productos manualmente.`);
-        }
-      } else {
-        setOcrMessage('❌ Error: ' + (data.ErrorMessage || 'No se pudo procesar'));
-      }
-
-      setTimeout(() => setOcrMessage(''), 4000);
-    } catch (error) {
-      console.error('Error en OCR:', error);
-      setOcrMessage('❌ Error al procesar: Intenta con otra imagen');
-    } finally {
+    setOcrMessage('⚠️ Función OCR en mantenimiento. Por favor agrega productos manualmente.');
+    
+    setTimeout(() => {
       setOcrLoading(false);
       setOcrFile(null);
-    }
+    }, 2000);
   };
 
   const extractProductsFromOCR = (text) => {
