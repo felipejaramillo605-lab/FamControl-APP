@@ -170,9 +170,12 @@ const AppEvents = ({
   };
 
   const getFilteredEvents = () => {
-    return Object.values(events).filter(e =>
-      filterCategoria === 'todas' ? true : e.categoria === filterCategoria
-    );
+    return Object.values(events)
+      .filter(e => {
+        // Validar que el evento tenga estructura correcta
+        if (!e || !e.id) return false;
+        return filterCategoria === 'todas' ? true : e.categoria === filterCategoria;
+      });
   };
 
   const sortedEvents = getFilteredEvents().sort((a, b) =>
