@@ -28,7 +28,7 @@ const SettingsModal = ({ isOpen, onClose }) => {
     confirmPassword: ''
   });
 
-  // NUEVO: Estado para notificaciones
+  // Estado para notificaciones - SOLO EMAIL
   const [notificationData, setNotificationData] = useState({
     email: '',
     loading: false,
@@ -77,7 +77,7 @@ const SettingsModal = ({ isOpen, onClose }) => {
     }
   }, [isOpen]);
 
-  // NUEVA FUNCIÓN: Cargar preferencias de notificación
+  // FUNCIÓN: Cargar preferencias de notificación - SOLO EMAIL
   const loadNotificationPreferences = async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -111,7 +111,7 @@ const SettingsModal = ({ isOpen, onClose }) => {
     }
   };
 
-  // NUEVA FUNCIÓN: Guardar preferencias de notificación
+  // FUNCIÓN: Guardar preferencias de notificación - SOLO EMAIL
   const saveNotificationPreferences = async () => {
     setNotificationData(prev => ({ ...prev, loading: true, message: { type: '', text: '' } }));
     
@@ -125,6 +125,7 @@ const SettingsModal = ({ isOpen, onClose }) => {
         return;
       }
 
+      // SOLO GUARDAMOS EMAIL - nada de phone_contact
       const preferences = {
         email: notificationData.email.trim(),
         updated_at: new Date().toISOString()
@@ -311,7 +312,7 @@ const SettingsModal = ({ isOpen, onClose }) => {
           </button>
         </div>
 
-        {/* Tabs - AGREGADA PESTAÑA NOTIFICACIONES */}
+        {/* Tabs */}
         <div style={{
           display: 'flex',
           gap: '0.5rem',
@@ -518,7 +519,7 @@ const SettingsModal = ({ isOpen, onClose }) => {
           </div>
         )}
 
-        {/* NUEVA PESTAÑA: Notificaciones */}
+        {/* PESTAÑA: Notificaciones - SOLO EMAIL */}
         {activeTab === 'notifications' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
             {/* Mensaje de notificaciones */}
@@ -534,6 +535,15 @@ const SettingsModal = ({ isOpen, onClose }) => {
                 {notificationData.message.text}
               </div>
             )}
+
+            <div style={{ textAlign: 'center', marginBottom: '1rem' }}>
+              <h3 style={{ margin: '0 0 0.5rem 0', color: '#1976d2' }}>
+                Configurar Contactos para Recordatorios
+              </h3>
+              <p style={{ color: '#666', fontSize: '0.9rem', margin: 0 }}>
+                Configura tu email para recibir recordatorios de eventos
+              </p>
+            </div>
 
             <div>
               <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600' }}>
@@ -586,27 +596,49 @@ const SettingsModal = ({ isOpen, onClose }) => {
               </ul>
             </div>
 
-            <button
-              onClick={saveNotificationPreferences}
-              disabled={notificationData.loading}
-              style={{
-                padding: '0.75rem 1.5rem',
-                backgroundColor: '#10b981',
-                color: 'white',
-                border: 'none',
-                borderRadius: '0.5rem',
-                cursor: notificationData.loading ? 'not-allowed' : 'pointer',
-                fontWeight: '600',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '0.5rem',
-                opacity: notificationData.loading ? 0.6 : 1
-              }}
-            >
-              <Bell size={18} />
-              {notificationData.loading ? 'Guardando...' : 'Guardar Contactos'}
-            </button>
+            <div style={{
+              display: 'flex',
+              gap: '0.75rem',
+              justifyContent: 'flex-end'
+            }}>
+              <button
+                type="button"
+                onClick={onClose}
+                style={{
+                  padding: '0.75rem 1.5rem',
+                  border: '1px solid #d1d5db',
+                  borderRadius: '0.5rem',
+                  backgroundColor: 'white',
+                  color: '#374151',
+                  cursor: 'pointer',
+                  fontWeight: '600'
+                }}
+                disabled={notificationData.loading}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={saveNotificationPreferences}
+                disabled={notificationData.loading}
+                style={{
+                  padding: '0.75rem 1.5rem',
+                  backgroundColor: '#10b981',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '0.5rem',
+                  cursor: notificationData.loading ? 'not-allowed' : 'pointer',
+                  fontWeight: '600',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '0.5rem',
+                  opacity: notificationData.loading ? 0.6 : 1
+                }}
+              >
+                <Bell size={18} />
+                {notificationData.loading ? 'Guardando...' : 'Guardar Contactos'}
+              </button>
+            </div>
           </div>
         )}
 
