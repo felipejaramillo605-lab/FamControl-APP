@@ -1,7 +1,8 @@
 // components/SettingsModal.js
 import React, { useState, useEffect, useRef } from 'react';
 import { useSettingsStore } from '../stores/settings';
-import { X, Save, RefreshCw, Lock, Eye, EyeOff } from 'lucide-react';
+import { X, Save, RefreshCw, Lock, Eye, EyeOff, Bell } from 'lucide-react';
+import { supabase } from '../supabaseClient';
 
 const SettingsModal = ({ isOpen, onClose }) => {
   const { 
@@ -26,6 +27,13 @@ const SettingsModal = ({ isOpen, onClose }) => {
     newPassword: '',
     confirmPassword: ''
   });
+
+  // NUEVO: Estado para notificaciones
+  const [notificationData, setNotificationData] = useState({
+    email: '',
+    loading: false,
+    message: { type: '', text: '' }
+  });
   
   const [showPasswords, setShowPasswords] = useState({
     current: false,
@@ -42,7 +50,7 @@ const SettingsModal = ({ isOpen, onClose }) => {
   useEffect(() => {
     if (isOpen && settings && !hasInitialized.current) {
       setFormData({
-        app_name: settings.app_name || 'FamControl v2',
+        app_name: settings.app_name || 'Qanta',
         currency: settings.currency || 'COP',
         thousands_separator: settings.thousands_separator !== false,
         color_primary: settings.color_primary || '#1976d2',
@@ -53,13 +61,110 @@ const SettingsModal = ({ isOpen, onClose }) => {
     }
   }, [isOpen]);
 
+  // Cargar preferencias de notificación cuando se abre el modal o cambia a pestaña de notificaciones
+  useEffect(() => {
+    if (isOpen && activeTab === 'notifications') {
+      loadNotificationPreferences();
+    }
+  }, [isOpen, activeTab]);
+
   // Resetear cuando se cierra el modal
   useEffect(() => {
     if (!isOpen) {
       hasInitialized.current = false;
       setMessage({ type: '', text: '' });
+      setNotificationData(prev => ({ ...prev, message: { type: '', text: '' } }));
     }
   }, [isOpen]);
+
+  // NUEVA FUNCIÓN: Cargar preferencias de notificación
+  const loadNotificationPreferences = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data, error } = await supabase
+        .from('user_profiles')
+        .select('notification_preferences')
+        .eq('id', user.id)
+        .single();
+
+      if (error && error.code !== 'PGRST116') {
+        console.error('Error cargando preferencias:', error);
+        return;
+      }
+
+      if (data?.notification_preferences?.email) {
+        setNotificationData(prev => ({ 
+          ...prev, 
+          email: data.notification_preferences.email 
+        }));
+      } else {
+        // Usar el email del usuario por defecto
+        setNotificationData(prev => ({ 
+          ...prev, 
+          email: user.email 
+        }));
+      }
+    } catch (error) {
+      console.error('Error cargando notificaciones:', error);
+    }
+  };
+
+  // NUEVA FUNCIÓN: Guardar preferencias de notificación
+  const saveNotificationPreferences = async () => {
+    setNotificationData(prev => ({ ...prev, loading: true, message: { type: '', text: '' } }));
+    
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        setNotificationData(prev => ({ 
+          ...prev, 
+          message: { type: 'error', text: 'Error: Usuario no autenticado' } 
+        }));
+        return;
+      }
+
+      const preferences = {
+        email: notificationData.email.trim(),
+        updated_at: new Date().toISOString()
+      };
+
+      const { error } = await supabase
+        .from('user_profiles')
+        .upsert({
+          id: user.id,
+          notification_preferences: preferences,
+          updated_at: new Date().toISOString()
+        }, {
+          onConflict: 'id'
+        });
+
+      if (error) {
+        console.error('Error guardando preferencias:', error);
+        setNotificationData(prev => ({ 
+          ...prev, 
+          message: { type: 'error', text: 'Error al guardar: ' + error.message } 
+        }));
+      } else {
+        setNotificationData(prev => ({ 
+          ...prev, 
+          message: { type: 'success', text: '✅ Configuración guardada exitosamente' } 
+        }));
+        setTimeout(() => {
+          setNotificationData(prev => ({ ...prev, message: { type: '', text: '' } }));
+        }, 3000);
+      }
+    } catch (error) {
+      console.error('Error crítico:', error);
+      setNotificationData(prev => ({ 
+        ...prev, 
+        message: { type: 'error', text: 'Error crítico al guardar' } 
+      }));
+    } finally {
+      setNotificationData(prev => ({ ...prev, loading: false }));
+    }
+  };
 
   const handleSaveSettings = async () => {
     setLoading(true);
@@ -206,56 +311,39 @@ const SettingsModal = ({ isOpen, onClose }) => {
           </button>
         </div>
 
-        {/* Tabs */}
+        {/* Tabs - AGREGADA PESTAÑA NOTIFICACIONES */}
         <div style={{
           display: 'flex',
-          gap: '1rem',
+          gap: '0.5rem',
           marginBottom: '2rem',
           borderBottom: '1px solid #e5e5e5',
-          paddingBottom: '1rem'
+          paddingBottom: '1rem',
+          flexWrap: 'wrap'
         }}>
-          <button
-            onClick={() => setActiveTab('general')}
-            style={{
-              padding: '0.75rem 1.5rem',
-              border: 'none',
-              background: activeTab === 'general' ? '#1976d2' : 'transparent',
-              color: activeTab === 'general' ? 'white' : '#666',
-              borderRadius: '0.5rem',
-              cursor: 'pointer',
-              fontWeight: '600'
-            }}
-          >
-            General
-          </button>
-          <button
-            onClick={() => setActiveTab('security')}
-            style={{
-              padding: '0.75rem 1.5rem',
-              border: 'none',
-              background: activeTab === 'security' ? '#1976d2' : 'transparent',
-              color: activeTab === 'security' ? 'white' : '#666',
-              borderRadius: '0.5rem',
-              cursor: 'pointer',
-              fontWeight: '600'
-            }}
-          >
-            Seguridad
-          </button>
-          <button
-            onClick={() => setActiveTab('advanced')}
-            style={{
-              padding: '0.75rem 1.5rem',
-              border: 'none',
-              background: activeTab === 'advanced' ? '#1976d2' : 'transparent',
-              color: activeTab === 'advanced' ? 'white' : '#666',
-              borderRadius: '0.5rem',
-              cursor: 'pointer',
-              fontWeight: '600'
-            }}
-          >
-            Avanzado
-          </button>
+          {[
+            { id: 'general', label: 'General' },
+            { id: 'notifications', label: 'Notificaciones' },
+            { id: 'security', label: 'Seguridad' },
+            { id: 'advanced', label: 'Avanzado' }
+          ].map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              style={{
+                padding: '0.75rem 1rem',
+                border: 'none',
+                background: activeTab === tab.id ? '#1976d2' : 'transparent',
+                color: activeTab === tab.id ? 'white' : '#666',
+                borderRadius: '0.5rem',
+                cursor: 'pointer',
+                fontWeight: '600',
+                fontSize: '0.875rem',
+                whiteSpace: 'nowrap'
+              }}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
 
         {/* Message */}
@@ -426,6 +514,98 @@ const SettingsModal = ({ isOpen, onClose }) => {
             >
               <Save size={18} />
               {loading ? 'Guardando...' : 'Guardar Configuración'}
+            </button>
+          </div>
+        )}
+
+        {/* NUEVA PESTAÑA: Notificaciones */}
+        {activeTab === 'notifications' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+            {/* Mensaje de notificaciones */}
+            {notificationData.message.text && (
+              <div style={{
+                padding: '1rem',
+                borderRadius: '0.5rem',
+                marginBottom: '1rem',
+                backgroundColor: notificationData.message.type === 'success' ? '#d1fae5' : '#fee2e2',
+                color: notificationData.message.type === 'success' ? '#065f46' : '#991b1b',
+                border: `1px solid ${notificationData.message.type === 'success' ? '#a7f3d0' : '#fecaca'}`
+              }}>
+                {notificationData.message.text}
+              </div>
+            )}
+
+            <div>
+              <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600' }}>
+                📧 Email para Recordatorios
+              </label>
+              <input
+                type="email"
+                value={notificationData.email}
+                onChange={(e) => setNotificationData(prev => ({ ...prev, email: e.target.value }))}
+                style={{
+                  width: '100%',
+                  padding: '0.75rem',
+                  border: '1px solid #d1d5db',
+                  borderRadius: '0.5rem',
+                  fontSize: '1rem',
+                  boxSizing: 'border-box'
+                }}
+                placeholder="tu@email.com"
+                required
+              />
+              <p style={{
+                fontSize: '0.875rem',
+                color: '#6b7280',
+                marginTop: '0.5rem'
+              }}>
+                Los recordatorios de eventos se enviarán a este correo
+              </p>
+            </div>
+
+            {/* Sección de información de seguridad */}
+            <div style={{
+              backgroundColor: '#f8fafc',
+              padding: '1rem',
+              borderRadius: '0.375rem',
+              marginBottom: '1rem',
+              border: '1px solid #e2e8f0'
+            }}>
+              <h4 style={{ margin: '0 0 0.5rem 0', color: '#374151' }}>
+                Información de Seguridad
+              </h4>
+              <ul style={{ 
+                margin: 0, 
+                paddingLeft: '1.25rem',
+                color: '#6b7280',
+                fontSize: '0.875rem'
+              }}>
+                <li>Tu información solo se usa para recordatorios</li>
+                <li>Nunca se comparte con terceros</li>
+                <li>Puedes cambiar/eliminar en cualquier momento</li>
+              </ul>
+            </div>
+
+            <button
+              onClick={saveNotificationPreferences}
+              disabled={notificationData.loading}
+              style={{
+                padding: '0.75rem 1.5rem',
+                backgroundColor: '#10b981',
+                color: 'white',
+                border: 'none',
+                borderRadius: '0.5rem',
+                cursor: notificationData.loading ? 'not-allowed' : 'pointer',
+                fontWeight: '600',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '0.5rem',
+                opacity: notificationData.loading ? 0.6 : 1
+              }}
+            >
+              <Bell size={18} />
+              {notificationData.loading ? 'Guardando...' : 'Guardar Contactos'}
             </button>
           </div>
         )}
