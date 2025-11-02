@@ -16,9 +16,6 @@ import AppEvents from './pages/AppEvents';
 import AppBudgets from './pages/AppBudgets';
 import AdminDashboard from './components/AdminDashboard';
 
-// Importar servicio de notificaciones
-import { startReminderWorker } from './services/reminderWorker';
-
 const DEFAULT_CATEGORIES = [
   { id: 'alimentacion', name: 'Alimentación', icon: '🍔', color: '#ef4444' },
   { id: 'transporte', name: 'Transporte', icon: '🚗', color: '#3b82f6' },
@@ -283,7 +280,7 @@ export default function FamControl() {
           await checkSupabaseConnection();
 
           // Iniciar servicio de notificaciones después del registro
-          startNotificationService();
+          startReminderWorker();
         } else {
           alert('Registro exitoso! Ya puedes iniciar sesión');
           setRegisterMode(false);
@@ -308,7 +305,7 @@ export default function FamControl() {
         await checkSupabaseConnection();
 
         // Iniciar servicio de notificaciones después del login
-        startNotificationService();
+        startReminderWorker();
       }
       
       setLoginEmail('');
