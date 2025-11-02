@@ -4,7 +4,7 @@ import DailyQuote from './components/DailyQuote';
 import DashboardResumen from './components/DashboardResumen';
 import { supabase } from './supabaseClient';
 import { startReminderWorker } from './services/reminderWorker';
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Plus, LogOut, BarChart3, Calendar, DollarSign, Home, Moon, Sun, ShoppingCart, Wallet, TrendingUp, Trash2, Target } from 'lucide-react';
 import { BarChart, Bar, ResponsiveContainer, XAxis, YAxis, Legend, Tooltip } from 'recharts';
 
@@ -67,7 +67,6 @@ export default function FamControl() {
   const [registerMode, setRegisterMode] = useState(false);
   const [showAdminDashboard, setShowAdminDashboard] = useState(false);
   const [userRole, setUserRole] = useState('user');
-  const [notificationServiceStatus, setNotificationServiceStatus] = useState('checking');
 
   const [categories] = useState(DEFAULT_CATEGORIES);
   const [accounts, setAccounts] = useState(DEFAULT_ACCOUNTS);
@@ -80,7 +79,6 @@ export default function FamControl() {
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   
   const settingsStore = useSettingsStore();
-  const notificationIntervalRef = useRef(null);
 
   useEffect(() => {
     const checkSession = async () => {
@@ -106,11 +104,10 @@ export default function FamControl() {
           await loadUserData(userId);
           await debugSync(userId);
 
-          // Iniciar servicio de notificaciones después de cargar datos del usuario
+          // Iniciar worker de recordatorios
           if (typeof window !== 'undefined') {
             startReminderWorker();
           }
-          
         }
       } catch (error) {
         console.error('Error crítico:', error);
@@ -118,53 +115,13 @@ export default function FamControl() {
     };
 
     checkSession();
-
-    // Limpieza al desmontar el componente
-    return () => {
-      if (notificationIntervalRef.current) {
-        stopEmailNotificationService(notificationIntervalRef.current);
-        console.log('🛑 Servicio de notificaciones detenido (cleanup)');
-      }
-    };
   }, []);
-
-  // Función para iniciar el servicio de notificaciones
-  const startNotificationService = () => {
-    try {
-      console.log('🚀 Iniciando servicio de notificaciones...');
-      
-      // Iniciar servicio de notificaciones
-      const intervalId = startEmailNotificationService();
-      notificationIntervalRef.current = intervalId;
-      
-      // Verificar estado del servicio
-      checkServiceStatus().then(status => {
-        console.log('📧 Estado del servicio de notificaciones:', status);
-        if (status.sendGridConfigured) {
-          setNotificationServiceStatus('active');
-          console.log('✅ Servicio de notificaciones activo');
-        } else {
-          setNotificationServiceStatus('inactive');
-          console.warn('⚠️ Servicio de notificaciones inactivo - SendGrid no configurado');
-        }
-      }).catch(error => {
-        console.error('❌ Error verificando estado del servicio:', error);
-        setNotificationServiceStatus('error');
-      });
-      
-    } catch (error) {
-      console.error('❌ Error iniciando servicio de notificaciones:', error);
-      setNotificationServiceStatus('error');
-    }
-  };
 
   useEffect(() => {
     const initializeSettings = async () => {
       if (typeof window === 'undefined') return;
       
       try {
-        await new Promise(resolve => setTimeout(resolve, 0));
-        
         if (settingsStore && typeof settingsStore.loadSettings === 'function') {
           await settingsStore.loadSettings();
         }
@@ -279,7 +236,7 @@ export default function FamControl() {
           }
           await checkSupabaseConnection();
 
-          // Iniciar servicio de notificaciones después del registro
+          // Iniciar worker de recordatorios después del registro
           startReminderWorker();
         } else {
           alert('Registro exitoso! Ya puedes iniciar sesión');
@@ -297,14 +254,14 @@ export default function FamControl() {
         }
         
         setUser(loginEmail);
-        localStorage.setItem('famcontrol_current_user', loginEmail);
+        localStorage.setItem('qanta_current_user', loginEmail);
         const { data: { user: currentUser } } = await supabase.auth.getUser();
         if (currentUser) {
           await loadUserData(currentUser.id);
         }
         await checkSupabaseConnection();
 
-        // Iniciar servicio de notificaciones después del login
+        // Iniciar worker de recordatorios después del login
         startReminderWorker();
       }
       
@@ -539,13 +496,6 @@ export default function FamControl() {
 
   const handleLogout = async () => {
     try { 
-      // Detener servicio de notificaciones
-      if (notificationIntervalRef.current) {
-        stopEmailNotificationService(notificationIntervalRef.current);
-        notificationIntervalRef.current = null;
-        console.log('🛑 Servicio de notificaciones detenido (logout)');
-      }
-
       await supabase.auth.signOut(); 
       setUser(null); 
       localStorage.removeItem('qanta_current_user'); 
@@ -631,33 +581,6 @@ export default function FamControl() {
           {settingsStore.settings?.app_name || 'Qanta'}
         </h1>
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          {/* Indicador de estado del servicio de notificaciones */}
-          {notificationServiceStatus === 'inactive' && (
-            <div style={{ 
-              padding: '0.25rem 0.5rem', 
-              backgroundColor: '#fef3c7', 
-              color: '#92400e', 
-              borderRadius: '0.25rem', 
-              fontSize: '0.75rem',
-              border: '1px solid #f59e0b'
-            }} title="SendGrid no configurado">
-              ⚠️ Notificaciones
-            </div>
-          )}
-          
-          {notificationServiceStatus === 'active' && (
-            <div style={{ 
-              padding: '0.25rem 0.5rem', 
-              backgroundColor: '#d1fae5', 
-              color: '#065f46', 
-              borderRadius: '0.25rem', 
-              fontSize: '0.75rem',
-              border: '1px solid #10b981'
-            }} title="Servicio de notificaciones activo">
-              ✅ Notificaciones
-            </div>
-          )}
-
           <button onClick={() => setShowSettingsModal(true)} style={{ padding: '0.5rem', borderRadius: '0.5rem', border: 'none', backgroundColor: darkMode ? '#333' : '#f0f0f0', cursor: 'pointer' }} title="Configuración">
             ⚙️
           </button>
