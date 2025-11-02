@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
-import { Plus, Trash2, Edit2, Check, X, MapPin, Mail, MessageCircle, Calendar, CheckCircle, AlertCircle } from 'lucide-react';
+import { Plus, Trash2, Edit2, Check, X, MapPin, Mail, MessageCircle, AlertCircle, Clock, PhoneOff } from 'lucide-react';
 
 // ============ CATEGORÍAS CONSTANTES ============
 const CATEGORIAS_EVENTOS = {
@@ -16,7 +16,7 @@ const getEventCategory = (categoryId) => {
   const category = CATEGORIAS_EVENTOS[categoryId];
   if (!category) {
     console.warn(`⚠️ Categoría no encontrada: ${categoryId}, usando default`);
-    return CATEGORIAS_EVENTOS.evento; // Default fallback
+    return CATEGORIAS_EVENTOS.evento;
   }
   return category;
 };
@@ -39,7 +39,260 @@ const safeGetEventProperty = (event, property, defaultValue = null) => {
   }
 };
 
-// ============ COMPONENT ============
+// Validar email
+const isValidEmail = (email) => {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return emailRegex.test(email);
+};
+
+// Validar teléfono WhatsApp (formato internacional)
+const isValidPhoneNumber = (phone) => {
+  const phoneRegex = /^\+?[1-9]\d{1,14}$/;
+  return phoneRegex.test(phone.replace(/\D/g, ''));
+};
+
+// ============ MODAL DE CONFIGURACIÓN DE NOTIFICACIONES ============
+const NotificationConfigModal = ({ 
+  isOpen, 
+  onClose, 
+  userEmail, 
+  userPhone,
+  onSave,
+  darkMode,
+  card,
+  border,
+  text,
+  textSec,
+  input
+}) => {
+  const [email, setEmail] = useState(userEmail || '');
+  const [phone, setPhone] = useState(userPhone || '');
+  const [emailError, setEmailError] = useState('');
+  const [phoneError, setPhoneError] = useState('');
+  const [savedMessage, setSavedMessage] = useState('');
+
+  const handleSave = async () => {
+    setEmailError('');
+    setPhoneError('');
+    setSavedMessage('');
+
+    let hasError = false;
+
+    if (email && !isValidEmail(email)) {
+      setEmailError('❌ Email inválido');
+      hasError = true;
+    }
+
+    if (phone && !isValidPhoneNumber(phone)) {
+      setPhoneError('❌ Formato de teléfono inválido. Usa: +57 3001234567');
+      hasError = true;
+    }
+
+    if (hasError) return;
+
+    try {
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      if (!currentUser) throw new Error('No hay usuario autenticado');
+
+      // Guardar datos de contacto del usuario
+      const { error } = await supabase
+        .from('user_profiles')
+        .update({
+          email_contact: email || null,
+          phone_contact: phone || null,
+          notification_preferences: {
+            email_enabled: !!email,
+            whatsapp_enabled: !!phone,
+            updated_at: new Date().toISOString()
+          }
+        })
+        .eq('id', currentUser.id);
+
+      if (error) throw error;
+
+      setSavedMessage('✅ Datos de contacto guardados correctamente');
+      if (onSave) onSave({ email, phone });
+      
+      setTimeout(() => {
+        setSavedMessage('');
+        onClose();
+      }, 2000);
+    } catch (error) {
+      console.error('Error guardando contactos:', error);
+      setSavedMessage('❌ Error al guardar: ' + error.message);
+    }
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div style={{
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: 'rgba(0, 0, 0, 0.5)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 1001,
+      padding: '1rem'
+    }}>
+      <div style={{
+        backgroundColor: card,
+        border: `1px solid ${border}`,
+        padding: '2rem',
+        borderRadius: '1rem',
+        width: '100%',
+        maxWidth: '400px'
+      }}>
+        <h2 style={{ color: text, margin: '0 0 1.5rem 0' }}>
+          📬 Configurar Contactos para Recordatorios
+        </h2>
+
+        {savedMessage && (
+          <div style={{
+            padding: '0.75rem',
+            backgroundColor: savedMessage.includes('✅') ? '#d1fae5' : '#fee2e2',
+            color: savedMessage.includes('✅') ? '#065f46' : '#991b1b',
+            borderRadius: '0.5rem',
+            marginBottom: '1rem',
+            fontSize: '0.875rem'
+          }}>
+            {savedMessage}
+          </div>
+        )}
+
+        {/* Email Input */}
+        <div style={{ marginBottom: '1.5rem' }}>
+          <label style={{ display: 'block', color: text, fontWeight: '600', marginBottom: '0.5rem' }}>
+            <Mail size={16} style={{ display: 'inline', marginRight: '0.5rem' }} />
+            Email para Recordatorios
+          </label>
+          <input
+            type="email"
+            placeholder="tu@email.com"
+            value={email}
+            onChange={(e) => {
+              setEmail(e.target.value);
+              setEmailError('');
+            }}
+            style={{
+              width: '100%',
+              padding: '0.75rem',
+              border: emailError ? '2px solid #ef4444' : `1px solid ${border}`,
+              borderRadius: '0.5rem',
+              backgroundColor: input,
+              color: text,
+              boxSizing: 'border-box',
+              fontSize: '0.95rem'
+            }}
+          />
+          {emailError && (
+            <p style={{ color: '#ef4444', fontSize: '0.75rem', margin: '0.25rem 0 0 0' }}>
+              {emailError}
+            </p>
+          )}
+          <p style={{ color: textSec, fontSize: '0.75rem', margin: '0.5rem 0 0 0' }}>
+            💡 Los recordatorios se enviarán a este correo
+          </p>
+        </div>
+
+        {/* Phone Input */}
+        <div style={{ marginBottom: '1.5rem' }}>
+          <label style={{ display: 'block', color: text, fontWeight: '600', marginBottom: '0.5rem' }}>
+            <MessageCircle size={16} style={{ display: 'inline', marginRight: '0.5rem' }} />
+            WhatsApp para Recordatorios
+          </label>
+          <div style={{ position: 'relative' }}>
+            <input
+              type="tel"
+              placeholder="+57 3001234567"
+              value={phone}
+              onChange={(e) => {
+                setPhone(e.target.value);
+                setPhoneError('');
+              }}
+              style={{
+                width: '100%',
+                padding: '0.75rem',
+                border: phoneError ? '2px solid #ef4444' : `1px solid ${border}`,
+                borderRadius: '0.5rem',
+                backgroundColor: input,
+                color: text,
+                boxSizing: 'border-box',
+                fontSize: '0.95rem'
+              }}
+            />
+          </div>
+          {phoneError && (
+            <p style={{ color: '#ef4444', fontSize: '0.75rem', margin: '0.25rem 0 0 0' }}>
+              {phoneError}
+            </p>
+          )}
+          <p style={{ color: textSec, fontSize: '0.75rem', margin: '0.5rem 0 0 0' }}>
+            💡 Formato: +57 3001234567 (incluir código país)
+          </p>
+        </div>
+
+        {/* Información de Seguridad */}
+        <div style={{
+          padding: '1rem',
+          backgroundColor: '#eff6ff',
+          border: '1px solid #bfdbfe',
+          borderRadius: '0.5rem',
+          marginBottom: '1.5rem'
+        }}>
+          <p style={{ color: '#1e40af', fontSize: '0.875rem', margin: '0 0 0.5rem 0', fontWeight: '600' }}>
+            🔒 Información de Seguridad
+          </p>
+          <ul style={{ color: '#1e40af', fontSize: '0.75rem', margin: 0, paddingLeft: '1.5rem' }}>
+            <li>Tu información solo se usa para recordatorios</li>
+            <li>Nunca se comparte con terceros</li>
+            <li>Puedes cambiar/eliminar en cualquier momento</li>
+          </ul>
+        </div>
+
+        {/* Botones */}
+        <div style={{ display: 'flex', gap: '1rem' }}>
+          <button
+            onClick={handleSave}
+            style={{
+              flex: 1,
+              padding: '0.75rem',
+              backgroundColor: '#10b981',
+              color: 'white',
+              border: 'none',
+              borderRadius: '0.5rem',
+              cursor: 'pointer',
+              fontWeight: '600'
+            }}
+          >
+            Guardar Contactos
+          </button>
+          <button
+            onClick={onClose}
+            style={{
+              flex: 1,
+              padding: '0.75rem',
+              backgroundColor: '#6b7280',
+              color: 'white',
+              border: 'none',
+              borderRadius: '0.5rem',
+              cursor: 'pointer',
+              fontWeight: '600'
+            }}
+          >
+            Cancelar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ============ MAIN COMPONENT ============
 const AppEvents = ({
   events = {},
   setEvents,
@@ -50,18 +303,19 @@ const AppEvents = ({
   textSec,
   input
 }) => {
-  // DEBUG: Log inicial
   console.log('🔍 AppEvents montado con eventos:', Object.keys(events || {}).length);
 
   const [eventForm, setEventForm] = useState({
     categoria: 'reunion',
     titulo: '',
     fecha_inicio: new Date().toISOString().split('T')[0],
+    hora_inicio: '09:00',
     ubicacion: '',
     observaciones: '',
     completado: false,
     recordatorio_habilitado: false,
     recordatorio_fecha: new Date().toISOString().split('T')[0],
+    recordatorio_hora: '08:00',
     recordatorio_tipo: 'email',
     phone_number: ''
   });
@@ -71,14 +325,69 @@ const AppEvents = ({
   const [filterCategoria, setFilterCategoria] = useState('todas');
   const [recordatorioMessage, setRecordatorioMessage] = useState('');
   const [debugMode, setDebugMode] = useState(false);
+  const [userContacts, setUserContacts] = useState({ email: '', phone: '' });
+  const [showNotificationConfig, setShowNotificationConfig] = useState(false);
 
-  // ============ EVENT HANDLERS ============
+  // Cargar contactos del usuario al montar
+  useEffect(() => {
+    loadUserContacts();
+  }, []);
+
+  const loadUserContacts = async () => {
+    try {
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      if (!currentUser) return;
+
+      const { data, error } = await supabase
+        .from('user_profiles')
+        .select('email_contact, phone_contact')
+        .eq('id', currentUser.id)
+        .single();
+
+      if (data) {
+        setUserContacts({
+          email: data.email_contact || '',
+          phone: data.phone_contact || ''
+        });
+        console.log('📞 Contactos cargados:', data);
+      }
+    } catch (error) {
+      console.error('Error cargando contactos:', error);
+    }
+  };
+
   const addOrUpdateEvent = async () => {
     console.log('📝 Agregando/Actualizando evento:', eventForm);
 
     if (!eventForm.titulo || !eventForm.fecha_inicio) {
       alert('Por favor completa título y fecha');
       return;
+    }
+
+    // Validar recordatorio
+    if (eventForm.recordatorio_habilitado) {
+      if (eventForm.recordatorio_tipo === 'email' && !userContacts.email) {
+        alert('❌ Debes configurar tu email para recibir recordatorios por correo');
+        setShowNotificationConfig(true);
+        return;
+      }
+      if (eventForm.recordatorio_tipo === 'whatsapp' && !userContacts.phone) {
+        alert('❌ Debes configurar tu WhatsApp para recibir recordatorios');
+        setShowNotificationConfig(true);
+        return;
+      }
+
+      if (!isValidEmail(userContacts.email) && eventForm.recordatorio_tipo === 'email') {
+        alert('❌ Email inválido. Configura tu correo correctamente');
+        setShowNotificationConfig(true);
+        return;
+      }
+
+      if (!isValidPhoneNumber(userContacts.phone) && eventForm.recordatorio_tipo === 'whatsapp') {
+        alert('❌ Número de WhatsApp inválido. Configura tu teléfono correctamente');
+        setShowNotificationConfig(true);
+        return;
+      }
     }
 
     try {
@@ -91,13 +400,16 @@ const AppEvents = ({
         titulo: eventForm.titulo || 'Sin título',
         categoria: eventForm.categoria || 'reunion',
         fecha_inicio: eventForm.fecha_inicio,
+        hora_inicio: eventForm.hora_inicio || '09:00',
         ubicacion: eventForm.ubicacion || '',
         observaciones: eventForm.observaciones || '',
         completado: Boolean(eventForm.completado),
         recordatorio_habilitado: Boolean(eventForm.recordatorio_habilitado),
         recordatorio_fecha: eventForm.recordatorio_fecha || null,
+        recordatorio_hora: eventForm.recordatorio_hora || '08:00',
         recordatorio_tipo: eventForm.recordatorio_tipo || 'email',
-        phone_number: eventForm.phone_number || '',
+        recordatorio_email: eventForm.recordatorio_tipo === 'email' ? userContacts.email : null,
+        recordatorio_phone: eventForm.recordatorio_tipo === 'whatsapp' ? userContacts.phone : null,
         user_id: currentUser.id,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
@@ -111,7 +423,32 @@ const AppEvents = ({
 
       if (error) throw error;
 
-      // Actualizar estado LOCAL de forma SEGURA
+      // Si el recordatorio está habilitado, crear registro en tabla de recordatorios
+      if (eventForm.recordatorio_habilitado) {
+        const reminderDateTime = `${eventForm.recordatorio_fecha}T${eventForm.recordatorio_hora}:00`;
+        const reminderRecord = {
+          id: `reminder_${newId}`,
+          event_id: newId,
+          user_id: currentUser.id,
+          scheduled_for: reminderDateTime,
+          notification_type: eventForm.recordatorio_tipo,
+          email: eventForm.recordatorio_tipo === 'email' ? userContacts.email : null,
+          phone: eventForm.recordatorio_tipo === 'whatsapp' ? userContacts.phone : null,
+          status: 'pending',
+          created_at: new Date().toISOString()
+        };
+
+        const { error: reminderError } = await supabase
+          .from('event_reminders')
+          .upsert(reminderRecord);
+
+        if (reminderError) {
+          console.warn('⚠️ Error guardando recordatorio (no es crítico):', reminderError);
+        } else {
+          console.log('✅ Recordatorio guardado:', reminderRecord);
+        }
+      }
+
       setEvents(prev => {
         const updated = { ...prev, [newId]: newEvent };
         console.log('✅ Estado de eventos actualizado:', Object.keys(updated).length);
@@ -120,7 +457,7 @@ const AppEvents = ({
 
       if (eventForm.recordatorio_habilitado) {
         setRecordatorioMessage(
-          `✅ Recordatorio configurado para ${eventForm.recordatorio_fecha} vía ${eventForm.recordatorio_tipo === 'email' ? '📧 Email' : '💬 WhatsApp'}`
+          `✅ Recordatorio: ${eventForm.recordatorio_fecha} a las ${eventForm.recordatorio_hora} vía ${eventForm.recordatorio_tipo === 'email' ? '📧' : '💬'}`
         );
         setTimeout(() => setRecordatorioMessage(''), 3000);
       }
@@ -143,13 +480,24 @@ const AppEvents = ({
       const { data: { user: currentUser } } = await supabase.auth.getUser();
       if (!currentUser) throw new Error('No hay usuario autenticado');
 
-      const { error } = await supabase
+      // Eliminar evento
+      const { error: eventError } = await supabase
         .from('events')
         .delete()
         .eq('id', id)
         .eq('user_id', currentUser.id);
 
-      if (error) throw error;
+      if (eventError) throw eventError;
+
+      // Eliminar recordatorio asociado
+      const { error: reminderError } = await supabase
+        .from('event_reminders')
+        .delete()
+        .eq('event_id', id);
+
+      if (reminderError) {
+        console.warn('⚠️ Error eliminando recordatorio:', reminderError);
+      }
 
       setEvents(prev => {
         const newEvents = { ...prev };
@@ -171,7 +519,11 @@ const AppEvents = ({
       return;
     }
 
-    setEventForm(event);
+    setEventForm({
+      ...event,
+      hora_inicio: event.hora_inicio || '09:00',
+      recordatorio_hora: event.recordatorio_hora || '08:00'
+    });
     setEditingEventId(event.id);
     setShowForm(true);
   };
@@ -181,11 +533,13 @@ const AppEvents = ({
       categoria: 'reunion',
       titulo: '',
       fecha_inicio: new Date().toISOString().split('T')[0],
+      hora_inicio: '09:00',
       ubicacion: '',
       observaciones: '',
       completado: false,
       recordatorio_habilitado: false,
       recordatorio_fecha: new Date().toISOString().split('T')[0],
+      recordatorio_hora: '08:00',
       recordatorio_tipo: 'email',
       phone_number: ''
     });
@@ -246,7 +600,6 @@ const AppEvents = ({
       console.log(`📊 Total de eventos: ${eventsList.length}`);
 
       const filtered = eventsList.filter(e => {
-        // Validación ESTRICTA
         if (!e || !e.id) {
           console.warn('⚠️ Evento sin ID:', e);
           return false;
@@ -326,6 +679,7 @@ const AppEvents = ({
 
               <p style={{ color: textSec, margin: '0.5rem 0', fontSize: '0.875rem' }}>
                 📅 {eventDate.toLocaleDateString('es-CO', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                {safeGetEventProperty(e, 'hora_inicio') && ` - ${e.hora_inicio}`}
                 {!isCompleted && daysUntil >= 0 && ` (En ${daysUntil} día${daysUntil !== 1 ? 's' : ''})`}
               </p>
 
@@ -342,10 +696,24 @@ const AppEvents = ({
               )}
 
               {safeGetEventProperty(e, 'recordatorio_habilitado') && (
-                <p style={{ color: '#f59e0b', margin: '0.5rem 0 0 0', fontSize: '0.875rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                  {e.recordatorio_tipo === 'email' ? <Mail size={14} /> : <MessageCircle size={14} />}
-                  Recordatorio: {safeGetEventProperty(e, 'recordatorio_fecha', 'N/A')}
-                </p>
+                <div style={{
+                  marginTop: '0.75rem',
+                  padding: '0.5rem 0.75rem',
+                  backgroundColor: darkMode ? '#2a2a2a' : '#f0f9ff',
+                  borderRadius: '0.5rem',
+                  borderLeft: '3px solid #f59e0b'
+                }}>
+                  <p style={{ color: '#f59e0b', margin: '0 0 0.25rem 0', fontSize: '0.875rem', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    {e.recordatorio_tipo === 'email' ? <Mail size={14} /> : <MessageCircle size={14} />}
+                    Recordatorio configurado
+                  </p>
+                  <p style={{ color: textSec, margin: 0, fontSize: '0.75rem' }}>
+                    📅 {safeGetEventProperty(e, 'recordatorio_fecha', 'N/A')} ⏰ {safeGetEventProperty(e, 'recordatorio_hora', 'N/A')}
+                  </p>
+                  <p style={{ color: textSec, margin: '0.25rem 0 0 0', fontSize: '0.75rem' }}>
+                    {e.recordatorio_tipo === 'email' ? `📧 ${e.recordatorio_email}` : `💬 ${e.recordatorio_phone}`}
+                  </p>
+                </div>
               )}
             </div>
 
@@ -377,7 +745,7 @@ const AppEvents = ({
                   padding: '0.5rem'
                 }}
               >
-                <CheckCircle size={18} />
+                <Check size={18} />
               </button>
               <button
                 onClick={() => deleteEvent(e.id)}
@@ -431,38 +799,19 @@ const AppEvents = ({
             {editingEventId ? '✏️ Editar' : '➕ Nuevo'} Evento
           </h2>
           <button
-            onClick={() => setDebugMode(!debugMode)}
-            title="Debug"
+            onClick={() => setShowNotificationConfig(true)}
+            title="Configurar contactos"
             style={{
               background: 'none',
               border: 'none',
               cursor: 'pointer',
-              fontSize: '1rem',
+              fontSize: '1.2rem',
               padding: '0.25rem'
             }}
           >
-            🔍
+            🔔
           </button>
         </div>
-
-        {debugMode && (
-          <div style={{
-            padding: '0.75rem',
-            backgroundColor: '#f0f9ff',
-            color: '#0c4a6e',
-            borderRadius: '0.5rem',
-            marginBottom: '1rem',
-            fontSize: '0.75rem',
-            maxHeight: '150px',
-            overflowY: 'auto',
-            fontFamily: 'monospace'
-          }}>
-            <p style={{ margin: '0 0 0.5rem 0', fontWeight: 'bold' }}>DEBUG:</p>
-            <p style={{ margin: '0.25rem 0' }}>Eventos: {Object.keys(events || {}).length}</p>
-            <p style={{ margin: '0.25rem 0' }}>Filtro: {filterCategoria}</p>
-            <p style={{ margin: '0.25rem 0' }}>Editando: {editingEventId || 'ninguno'}</p>
-          </div>
-        )}
 
         {recordatorioMessage && (
           <div style={{
@@ -524,15 +873,33 @@ const AppEvents = ({
             />
           </div>
 
-          {/* Fecha */}
+          {/* Fecha y Hora del Evento */}
           <div>
             <label style={{ display: 'block', color: textSec, fontSize: '0.875rem', marginBottom: '0.5rem' }}>
-              Fecha del Evento
+              📅 Fecha del Evento
             </label>
             <input
               type="date"
               value={eventForm.fecha_inicio}
               onChange={(e) => setEventForm({ ...eventForm, fecha_inicio: e.target.value })}
+              style={{
+                width: '100%',
+                padding: '0.75rem',
+                border: `1px solid ${border}`,
+                borderRadius: '0.5rem',
+                backgroundColor: input,
+                color: text,
+                boxSizing: 'border-box',
+                marginBottom: '0.5rem'
+              }}
+            />
+            <label style={{ display: 'block', color: textSec, fontSize: '0.875rem', marginBottom: '0.5rem' }}>
+              ⏰ Hora del Evento
+            </label>
+            <input
+              type="time"
+              value={eventForm.hora_inicio}
+              onChange={(e) => setEventForm({ ...eventForm, hora_inicio: e.target.value })}
               style={{
                 width: '100%',
                 padding: '0.75rem',
@@ -623,7 +990,7 @@ const AppEvents = ({
             </label>
           </div>
 
-          {/* Recordatorio */}
+          {/* RECORDATORIO - SECCIÓN COMPLETA */}
           <div style={{
             backgroundColor: darkMode ? '#2a2a2a' : '#f9f9f9',
             padding: '1rem',
@@ -639,15 +1006,110 @@ const AppEvents = ({
                 style={{ width: '20px', height: '20px', cursor: 'pointer' }}
               />
               <label htmlFor="recordatorio" style={{ color: text, cursor: 'pointer', fontWeight: '600' }}>
-                Configurar Recordatorio
+                Habilitar Recordatorio
               </label>
             </div>
 
+            {/* ADVERTENCIA SI NO HAY CONTACTOS */}
+            {eventForm.recordatorio_habilitado && !userContacts.email && !userContacts.phone && (
+              <div style={{
+                padding: '0.75rem',
+                backgroundColor: '#fee2e2',
+                border: '1px solid #fecaca',
+                borderRadius: '0.5rem',
+                marginBottom: '1rem'
+              }}>
+                <p style={{ color: '#991b1b', fontSize: '0.875rem', margin: '0 0 0.5rem 0', fontWeight: '600' }}>
+                  ❌ Debes configurar tus contactos
+                </p>
+                <button
+                  onClick={() => setShowNotificationConfig(true)}
+                  style={{
+                    width: '100%',
+                    padding: '0.5rem',
+                    backgroundColor: '#ef4444',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '0.5rem',
+                    cursor: 'pointer',
+                    fontSize: '0.875rem',
+                    fontWeight: '600'
+                  }}
+                >
+                  🔔 Configurar Contactos
+                </button>
+              </div>
+            )}
+
             {eventForm.recordatorio_habilitado && (
               <>
+                {/* Tipo de Recordatorio */}
+                <div style={{ marginBottom: '1rem' }}>
+                  <label style={{ display: 'block', color: text, fontSize: '0.875rem', marginBottom: '0.5rem', fontWeight: '600' }}>
+                    Tipo de Notificación
+                  </label>
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <button
+                      onClick={() => setEventForm({ ...eventForm, recordatorio_tipo: 'email' })}
+                      style={{
+                        flex: 1,
+                        padding: '0.75rem',
+                        backgroundColor: eventForm.recordatorio_tipo === 'email' ? '#3b82f6' : border,
+                        color: eventForm.recordatorio_tipo === 'email' ? 'white' : text,
+                        border: 'none',
+                        borderRadius: '0.5rem',
+                        cursor: userContacts.email ? 'pointer' : 'not-allowed',
+                        fontSize: '0.875rem',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '0.5rem',
+                        opacity: userContacts.email ? 1 : 0.5
+                      }}
+                      disabled={!userContacts.email}
+                      title={userContacts.email ? `📧 ${userContacts.email}` : 'Configura tu email primero'}
+                    >
+                      <Mail size={16} /> Email
+                    </button>
+                    <button
+                      onClick={() => setEventForm({ ...eventForm, recordatorio_tipo: 'whatsapp' })}
+                      style={{
+                        flex: 1,
+                        padding: '0.75rem',
+                        backgroundColor: eventForm.recordatorio_tipo === 'whatsapp' ? '#10b981' : border,
+                        color: eventForm.recordatorio_tipo === 'whatsapp' ? 'white' : text,
+                        border: 'none',
+                        borderRadius: '0.5rem',
+                        cursor: userContacts.phone ? 'pointer' : 'not-allowed',
+                        fontSize: '0.875rem',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '0.5rem',
+                        opacity: userContacts.phone ? 1 : 0.5
+                      }}
+                      disabled={!userContacts.phone}
+                      title={userContacts.phone ? `💬 ${userContacts.phone}` : 'Configura tu WhatsApp primero'}
+                    >
+                      <MessageCircle size={16} /> WhatsApp
+                    </button>
+                  </div>
+                  {eventForm.recordatorio_tipo === 'email' && userContacts.email && (
+                    <p style={{ color: textSec, fontSize: '0.75rem', margin: '0.5rem 0 0 0' }}>
+                      📧 Se enviará a: <strong>{userContacts.email}</strong>
+                    </p>
+                  )}
+                  {eventForm.recordatorio_tipo === 'whatsapp' && userContacts.phone && (
+                    <p style={{ color: textSec, fontSize: '0.75rem', margin: '0.5rem 0 0 0' }}>
+                      💬 Se enviará a: <strong>{userContacts.phone}</strong>
+                    </p>
+                  )}
+                </div>
+
+                {/* Fecha Recordatorio */}
                 <div style={{ marginBottom: '0.75rem' }}>
-                  <label style={{ display: 'block', color: textSec, fontSize: '0.75rem', marginBottom: '0.25rem' }}>
-                    Fecha del Recordatorio
+                  <label style={{ display: 'block', color: text, fontSize: '0.875rem', marginBottom: '0.5rem', fontWeight: '600' }}>
+                    📅 Fecha del Recordatorio
                   </label>
                   <input
                     type="date"
@@ -663,52 +1125,52 @@ const AppEvents = ({
                       boxSizing: 'border-box'
                     }}
                   />
+                  <p style={{ color: textSec, fontSize: '0.75rem', margin: '0.25rem 0 0 0' }}>
+                    💡 Recomendado: un día antes del evento
+                  </p>
                 </div>
 
+                {/* Hora Recordatorio */}
                 <div>
-                  <label style={{ display: 'block', color: textSec, fontSize: '0.75rem', marginBottom: '0.25rem' }}>
-                    Método de Recordatorio
+                  <label style={{ display: 'block', color: text, fontSize: '0.875rem', marginBottom: '0.5rem', fontWeight: '600' }}>
+                    ⏰ Hora del Recordatorio
                   </label>
-                  <div style={{ display: 'flex', gap: '0.5rem' }}>
-                    <button
-                      onClick={() => setEventForm({ ...eventForm, recordatorio_tipo: 'email' })}
-                      style={{
-                        flex: 1,
-                        padding: '0.5rem',
-                        backgroundColor: eventForm.recordatorio_tipo === 'email' ? '#3b82f6' : border,
-                        color: eventForm.recordatorio_tipo === 'email' ? 'white' : text,
-                        border: 'none',
-                        borderRadius: '0.5rem',
-                        cursor: 'pointer',
-                        fontSize: '0.875rem',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '0.5rem'
-                      }}
-                    >
-                      <Mail size={16} /> Email
-                    </button>
-                    <button
-                      onClick={() => setEventForm({ ...eventForm, recordatorio_tipo: 'whatsapp' })}
-                      style={{
-                        flex: 1,
-                        padding: '0.5rem',
-                        backgroundColor: eventForm.recordatorio_tipo === 'whatsapp' ? '#10b981' : border,
-                        color: eventForm.recordatorio_tipo === 'whatsapp' ? 'white' : text,
-                        border: 'none',
-                        borderRadius: '0.5rem',
-                        cursor: 'pointer',
-                        fontSize: '0.875rem',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '0.5rem'
-                      }}
-                    >
-                      <MessageCircle size={16} /> WhatsApp
-                    </button>
-                  </div>
+                  <input
+                    type="time"
+                    value={eventForm.recordatorio_hora}
+                    onChange={(e) => setEventForm({ ...eventForm, recordatorio_hora: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '0.5rem',
+                      border: `1px solid ${border}`,
+                      borderRadius: '0.5rem',
+                      backgroundColor: input,
+                      color: text,
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                  <p style={{ color: textSec, fontSize: '0.75rem', margin: '0.25rem 0 0 0' }}>
+                    💡 Ej: 09:00 (9:00 AM)
+                  </p>
+                </div>
+
+                {/* Resumen del Recordatorio */}
+                <div style={{
+                  marginTop: '1rem',
+                  padding: '0.75rem',
+                  backgroundColor: darkMode ? '#1a3a1a' : '#f0fdf4',
+                  border: '1px solid #10b981',
+                  borderRadius: '0.5rem'
+                }}>
+                  <p style={{ color: '#10b981', fontSize: '0.875rem', margin: 0, fontWeight: '600' }}>
+                    ✅ Resumen del Recordatorio:
+                  </p>
+                  <p style={{ color: textSec, fontSize: '0.75rem', margin: '0.5rem 0 0 0' }}>
+                    Se te notificará el {eventForm.recordatorio_fecha} a las {eventForm.recordatorio_hora}
+                  </p>
+                  <p style={{ color: textSec, fontSize: '0.75rem', margin: '0.25rem 0 0 0' }}>
+                    Via: {eventForm.recordatorio_tipo === 'email' ? '📧 Email' : '💬 WhatsApp'}
+                  </p>
                 </div>
               </>
             )}
@@ -824,7 +1286,7 @@ const AppEvents = ({
         {completedEvents.length > 0 && (
           <div>
             <h3 style={{ color: text, margin: '0 0 1rem 0', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <CheckCircle size={20} /> Eventos Completados ({completedEvents.length})
+              <Check size={20} /> Eventos Completados ({completedEvents.length})
             </h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
               {completedEvents.map(e => renderEventCard(e, true))}
@@ -849,6 +1311,24 @@ const AppEvents = ({
           </div>
         )}
       </div>
+
+      {/* Modal de Configuración de Notificaciones */}
+      <NotificationConfigModal
+        isOpen={showNotificationConfig}
+        onClose={() => setShowNotificationConfig(false)}
+        userEmail={userContacts.email}
+        userPhone={userContacts.phone}
+        onSave={(newContacts) => {
+          setUserContacts(newContacts);
+          loadUserContacts();
+        }}
+        darkMode={darkMode}
+        card={card}
+        border={border}
+        text={text}
+        textSec={textSec}
+        input={input}
+      />
     </div>
   );
 };

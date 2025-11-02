@@ -3,7 +3,8 @@ import SettingsModal from './components/SettingsModal';
 import DailyQuote from './components/DailyQuote';
 import DashboardResumen from './components/DashboardResumen';
 import { supabase } from './supabaseClient';
-import React, { useState, useEffect } from 'react';
+import { startReminderWorker } from './services/reminderWorker';
+import React, { useState, useEffect, useRef } from 'react';
 import { Plus, LogOut, BarChart3, Calendar, DollarSign, Home, Moon, Sun, ShoppingCart, Wallet, TrendingUp, Trash2, Target } from 'lucide-react';
 import { BarChart, Bar, ResponsiveContainer, XAxis, YAxis, Legend, Tooltip } from 'recharts';
 
@@ -14,6 +15,9 @@ import AppShopping from './pages/AppShopping';
 import AppEvents from './pages/AppEvents';
 import AppBudgets from './pages/AppBudgets';
 import AdminDashboard from './components/AdminDashboard';
+
+// Importar servicio de notificaciones
+import { startEmailNotificationService, stopEmailNotificationService, checkServiceStatus } from './services/emailNotificationService';
 
 const DEFAULT_CATEGORIES = [
   { id: 'alimentacion', name: 'Alimentación', icon: '🍔', color: '#ef4444' },
@@ -66,6 +70,7 @@ export default function FamControl() {
   const [registerMode, setRegisterMode] = useState(false);
   const [showAdminDashboard, setShowAdminDashboard] = useState(false);
   const [userRole, setUserRole] = useState('user');
+  const [notificationServiceStatus, setNotificationServiceStatus] = useState('checking');
 
   const [categories] = useState(DEFAULT_CATEGORIES);
   const [accounts, setAccounts] = useState(DEFAULT_ACCOUNTS);
@@ -78,6 +83,7 @@ export default function FamControl() {
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   
   const settingsStore = useSettingsStore();
+  const notificationIntervalRef = useRef(null);
 
   useEffect(() => {
     const checkSession = async () => {
@@ -97,11 +103,17 @@ export default function FamControl() {
           setUser(userEmail);
           
           if (typeof window !== 'undefined') {
-            localStorage.setItem('famcontrol_current_user', userEmail);
+            localStorage.setItem('qanta_current_user', userEmail);
           }
         
           await loadUserData(userId);
           await debugSync(userId);
+
+          // Iniciar servicio de notificaciones después de cargar datos del usuario
+          if (typeof window !== 'undefined') {
+            startReminderWorker();
+          }
+          
         }
       } catch (error) {
         console.error('Error crítico:', error);
@@ -109,7 +121,45 @@ export default function FamControl() {
     };
 
     checkSession();
+
+    // Limpieza al desmontar el componente
+    return () => {
+      if (notificationIntervalRef.current) {
+        stopEmailNotificationService(notificationIntervalRef.current);
+        console.log('🛑 Servicio de notificaciones detenido (cleanup)');
+      }
+    };
   }, []);
+
+  // Función para iniciar el servicio de notificaciones
+  const startNotificationService = () => {
+    try {
+      console.log('🚀 Iniciando servicio de notificaciones...');
+      
+      // Iniciar servicio de notificaciones
+      const intervalId = startEmailNotificationService();
+      notificationIntervalRef.current = intervalId;
+      
+      // Verificar estado del servicio
+      checkServiceStatus().then(status => {
+        console.log('📧 Estado del servicio de notificaciones:', status);
+        if (status.sendGridConfigured) {
+          setNotificationServiceStatus('active');
+          console.log('✅ Servicio de notificaciones activo');
+        } else {
+          setNotificationServiceStatus('inactive');
+          console.warn('⚠️ Servicio de notificaciones inactivo - SendGrid no configurado');
+        }
+      }).catch(error => {
+        console.error('❌ Error verificando estado del servicio:', error);
+        setNotificationServiceStatus('error');
+      });
+      
+    } catch (error) {
+      console.error('❌ Error iniciando servicio de notificaciones:', error);
+      setNotificationServiceStatus('error');
+    }
+  };
 
   useEffect(() => {
     const initializeSettings = async () => {
@@ -225,12 +275,15 @@ export default function FamControl() {
           }
           
           setUser(loginEmail);
-          localStorage.setItem('famcontrol_current_user', loginEmail);
+          localStorage.setItem('qanta_current_user', loginEmail);
           const { data: { user: currentUser } } = await supabase.auth.getUser();
           if (currentUser) {
             await loadUserData(currentUser.id);
           }
           await checkSupabaseConnection();
+
+          // Iniciar servicio de notificaciones después del registro
+          startNotificationService();
         } else {
           alert('Registro exitoso! Ya puedes iniciar sesión');
           setRegisterMode(false);
@@ -253,6 +306,9 @@ export default function FamControl() {
           await loadUserData(currentUser.id);
         }
         await checkSupabaseConnection();
+
+        // Iniciar servicio de notificaciones después del login
+        startNotificationService();
       }
       
       setLoginEmail('');
@@ -484,6 +540,23 @@ export default function FamControl() {
     return useSeparator ? number.toLocaleString('es-CO') : number.toString();
   };
 
+  const handleLogout = async () => {
+    try { 
+      // Detener servicio de notificaciones
+      if (notificationIntervalRef.current) {
+        stopEmailNotificationService(notificationIntervalRef.current);
+        notificationIntervalRef.current = null;
+        console.log('🛑 Servicio de notificaciones detenido (logout)');
+      }
+
+      await supabase.auth.signOut(); 
+      setUser(null); 
+      localStorage.removeItem('qanta_current_user'); 
+    } catch (error) { 
+      console.error('Error al cerrar sesión:', error); 
+    }
+  };
+
   const bg = darkMode ? '#0a0a0a' : '#f5f5f5';
   const card = darkMode ? '#1a1a1a' : '#ffffff';
   const border = darkMode ? '#333' : '#e5e5e5';
@@ -503,8 +576,8 @@ export default function FamControl() {
 
           {!showForgotPassword ? (
             <>
-              <h1 style={{ fontSize: '2rem', fontWeight: 'bold', textAlign: 'center', color: text, margin: '0 0 0.5rem 0' }}>FamControl v2</h1>
-              <p style={{ textAlign: 'center', color: textSec, margin: '0 0 2rem 0' }}>Gestiona tus finanzas familiares</p>
+              <h1 style={{ fontSize: '2rem', fontWeight: 'bold', textAlign: 'center', color: text, margin: '0 0 0.5rem 0' }}>Qanta</h1>
+              <p style={{ textAlign: 'center', color: textSec, margin: '0 0 2rem 0' }}>Tu gestor financiero inteligente</p>
               
               <input type="email" placeholder="Email" value={loginEmail} onChange={(e) => setLoginEmail(e.target.value)} style={{ width: '100%', padding: '0.75rem', border: `1px solid ${border}`, borderRadius: '0.5rem', backgroundColor: input, color: text, marginBottom: '1rem', boxSizing: 'border-box' }} />
               
@@ -558,9 +631,36 @@ export default function FamControl() {
     <div style={{ minHeight: '100vh', backgroundColor: bg }}>
       <div style={{ backgroundColor: card, borderBottom: `1px solid ${border}`, padding: '1rem 2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', color: text, margin: 0 }}>
-          {settingsStore.settings?.app_name || 'FamControl v2'}
+          {settingsStore.settings?.app_name || 'Qanta'}
         </h1>
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          {/* Indicador de estado del servicio de notificaciones */}
+          {notificationServiceStatus === 'inactive' && (
+            <div style={{ 
+              padding: '0.25rem 0.5rem', 
+              backgroundColor: '#fef3c7', 
+              color: '#92400e', 
+              borderRadius: '0.25rem', 
+              fontSize: '0.75rem',
+              border: '1px solid #f59e0b'
+            }} title="SendGrid no configurado">
+              ⚠️ Notificaciones
+            </div>
+          )}
+          
+          {notificationServiceStatus === 'active' && (
+            <div style={{ 
+              padding: '0.25rem 0.5rem', 
+              backgroundColor: '#d1fae5', 
+              color: '#065f46', 
+              borderRadius: '0.25rem', 
+              fontSize: '0.75rem',
+              border: '1px solid #10b981'
+            }} title="Servicio de notificaciones activo">
+              ✅ Notificaciones
+            </div>
+          )}
+
           <button onClick={() => setShowSettingsModal(true)} style={{ padding: '0.5rem', borderRadius: '0.5rem', border: 'none', backgroundColor: darkMode ? '#333' : '#f0f0f0', cursor: 'pointer' }} title="Configuración">
             ⚙️
           </button>
@@ -575,15 +675,7 @@ export default function FamControl() {
             {darkMode ? <Sun size={20} color="#fbbf24" /> : <Moon size={20} color="#666" />}
           </button>
           <span style={{ fontSize: '0.875rem', color: textSec }}>{user}</span>
-          <button onClick={async () => { 
-            try { 
-              await supabase.auth.signOut(); 
-              setUser(null); 
-              localStorage.removeItem('famcontrol_current_user'); 
-            } catch (error) { 
-              console.error('Error al cerrar sesión:', error); 
-            }
-          }} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', backgroundColor: '#ef4444', color: 'white', border: 'none', padding: '0.5rem 1rem', borderRadius: '0.5rem', cursor: 'pointer', fontWeight: '500' }}>
+          <button onClick={handleLogout} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', backgroundColor: '#ef4444', color: 'white', border: 'none', padding: '0.5rem 1rem', borderRadius: '0.5rem', cursor: 'pointer', fontWeight: '500' }}>
             <LogOut size={18} /> Salir
           </button>
         </div>
