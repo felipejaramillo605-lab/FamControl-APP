@@ -17,7 +17,7 @@ import AppBudgets from './pages/AppBudgets';
 import AdminDashboard from './components/AdminDashboard';
 
 // Importar servicio de notificaciones
-import { startEmailNotificationService, stopEmailNotificationService, checkServiceStatus } from './services/emailNotificationService';
+import { startReminderWorker } from './services/reminderWorker';
 
 const DEFAULT_CATEGORIES = [
   { id: 'alimentacion', name: 'Alimentación', icon: '🍔', color: '#ef4444' },
