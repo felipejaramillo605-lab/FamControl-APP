@@ -253,7 +253,7 @@ const AppEvents = ({
     categoria: 'reunion',
     titulo: '',
     fecha_inicio: new Date().toISOString().split('T')[0],
-    hora_inicio: '09:00',
+    reminder_time: '09:00',
     ubicacion: '',
     observaciones: '',
     completado: false,
@@ -275,30 +275,62 @@ const AppEvents = ({
     loadUserContacts();
   }, []);
 
+  // En AppEvents.js, reemplaza la función loadUserContacts:
+
   const loadUserContacts = async () => {
     try {
       const { data: { user: currentUser } } = await supabase.auth.getUser();
-      if (!currentUser) return;
+      if (!currentUser) {
+        console.warn('⚠️ No hay usuario autenticado');
+        return;
+      }
 
+      // Intentar cargar preferencias guardadas
       const { data, error } = await supabase
         .from('user_profiles')
-        .select('notification_preferences')
+        .select('notification_email, notification_preferences')
         .eq('id', currentUser.id)
         .single();
 
-      if (data?.notification_preferences?.email) {
-        setUserContacts({
-          email: data.notification_preferences.email
-        });
-        console.log('📧 Email cargado:', data.notification_preferences.email);
-      } else {
-        // Usar el email del usuario por defecto
-        setUserContacts({
-          email: currentUser.email
-        });
+      if (error && error.code !== 'PGRST116') {
+        console.error('❌ Error cargando contactos:', error);
+        return;
       }
+
+      // Prioridad: campo específico notification_email > JSON preferences > email del usuario
+      let emailToUse = currentUser.email;
+
+      if (data?.notification_email) {
+        emailToUse = data.notification_email;
+        console.log('✅ Email cargado de notification_email:', emailToUse);
+      } else if (data?.notification_preferences) {
+        try {
+          const prefs = typeof data.notification_preferences === 'string' 
+            ? JSON.parse(data.notification_preferences) 
+            : data.notification_preferences;
+          
+          if (prefs?.email) {
+            emailToUse = prefs.email;
+            console.log('✅ Email cargado de notification_preferences:', emailToUse);
+          }
+        } catch (e) {
+          console.warn('⚠️ Error parseando notification_preferences');
+        }
+      }
+
+      setUserContacts({
+        email: emailToUse
+      });
+
+      console.log('📧 Email configurado:', emailToUse);
+
     } catch (error) {
-      console.error('Error cargando contactos:', error);
+      console.error('❌ Error crítico en loadUserContacts:', error);
+      // Fallback al email del usuario actual
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      if (currentUser) {
+        setUserContacts({ email: currentUser.email });
+      }
     }
   };
 
@@ -335,7 +367,7 @@ const AppEvents = ({
         titulo: eventForm.titulo || 'Sin título',
         categoria: eventForm.categoria || 'reunion',
         fecha_inicio: eventForm.fecha_inicio,
-        hora_inicio: eventForm.hora_inicio || '09:00',
+        reminder_time: eventForm.reminder_time || '09:00',
         ubicacion: eventForm.ubicacion || '',
         observaciones: eventForm.observaciones || '',
         completado: Boolean(eventForm.completado),
@@ -454,7 +486,7 @@ const AppEvents = ({
 
     setEventForm({
       ...event,
-      hora_inicio: event.hora_inicio || '09:00',
+      reminder_time: event.reminder_time || '09:00',
       recordatorio_hora: event.recordatorio_hora || '08:00'
     });
     setEditingEventId(event.id);
@@ -466,7 +498,7 @@ const AppEvents = ({
       categoria: 'reunion',
       titulo: '',
       fecha_inicio: new Date().toISOString().split('T')[0],
-      hora_inicio: '09:00',
+      reminder_time: '09:00',
       ubicacion: '',
       observaciones: '',
       completado: false,
@@ -611,7 +643,7 @@ const AppEvents = ({
 
               <p style={{ color: textSec, margin: '0.5rem 0', fontSize: '0.875rem' }}>
                 📅 {eventDate.toLocaleDateString('es-CO', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-                {safeGetEventProperty(e, 'hora_inicio') && ` - ${e.hora_inicio}`}
+                {safeGetEventProperty(e, 'reminder_time') && ` - ${e.reminder_time}`}
                 {!isCompleted && daysUntil >= 0 && ` (En ${daysUntil} día${daysUntil !== 1 ? 's' : ''})`}
               </p>
 
@@ -830,8 +862,8 @@ const AppEvents = ({
             </label>
             <input
               type="time"
-              value={eventForm.hora_inicio}
-              onChange={(e) => setEventForm({ ...eventForm, hora_inicio: e.target.value })}
+              value={eventForm.reminder_time}
+              onChange={(e) => setEventForm({ ...eventForm, reminder_time: e.target.value })}
               style={{
                 width: '100%',
                 padding: '0.75rem',
