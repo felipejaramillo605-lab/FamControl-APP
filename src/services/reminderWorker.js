@@ -36,7 +36,7 @@ const processReminder = async (reminder) => {
       const result = await sendEmailNotification(email, {
         titulo: reminder.events?.titulo || 'Evento',
         fecha_inicio: reminder.events?.fecha_inicio,
-        hora_inicio: reminder.events?.hora_inicio,
+        reminder_time: reminder.events?.reminder_time,
         ubicacion: reminder.events?.ubicacion,
         observaciones: reminder.events?.observaciones
       });
