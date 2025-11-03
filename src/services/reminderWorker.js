@@ -6,6 +6,8 @@ export const checkAndSendReminders = async () => {
     const now = new Date();
     const fiveMinutesAgo = new Date(now.getTime() - 5 * 60000);
 
+    console.log('🔍 Buscando recordatorios entre:', fiveMinutesAgo.toISOString(), 'y', now.toISOString());
+
     const { data: reminders, error } = await supabase
       .from('event_reminders')
       .select('*, events(*)')
@@ -14,14 +16,17 @@ export const checkAndSendReminders = async () => {
       .gte('scheduled_for', fiveMinutesAgo.toISOString());
 
     if (error) {
-      console.error('Error obteniendo recordatorios:', error);
+      console.error('❌ Error obteniendo recordatorios:', error);
       return;
     }
 
-    console.log(`📊 Recordatorios pendientes: ${reminders?.length || 0}`);
+    console.log(`📊 Recordatorios pendientes encontrados: ${reminders?.length || 0}`);
 
-    for (const reminder of reminders || []) {
-      await processReminder(reminder);
+    if (reminders && reminders.length > 0) {
+      for (const reminder of reminders) {
+        console.log('📬 Procesando recordatorio:', reminder.id);
+        await processReminder(reminder);
+      }
     }
   } catch (error) {
     console.error('❌ Error en checkAndSendReminders:', error);
@@ -30,9 +35,20 @@ export const checkAndSendReminders = async () => {
 
 const processReminder = async (reminder) => {
   try {
+    console.log('🔍 Detalles del recordatorio:', {
+      id: reminder.id,
+      notification_type: reminder.notification_type,
+      email: reminder.email,
+      status: reminder.status,
+      event: reminder.events?.titulo
+    });
+
     const { id, notification_type, email } = reminder;
 
+    // Verificar que el tipo sea email y que haya un destinatario
     if (notification_type === 'email' && email) {
+      console.log('📧 Enviando email a:', email);
+
       const result = await sendEmailNotification(email, {
         titulo: reminder.events?.titulo || 'Evento',
         fecha_inicio: reminder.events?.fecha_inicio,
@@ -41,8 +57,12 @@ const processReminder = async (reminder) => {
         observaciones: reminder.events?.observaciones
       });
 
+      console.log('📨 Resultado del envío:', result);
+
       if (result.success) {
-        await supabase
+        console.log('✅ Email enviado, actualizando estado a "sent"...');
+
+        const { error: updateError } = await supabase
           .from('event_reminders')
           .update({
             status: 'sent',
@@ -50,9 +70,15 @@ const processReminder = async (reminder) => {
           })
           .eq('id', id);
 
-        console.log('✅ Recordatorio marcado como enviado:', id);
+        if (updateError) {
+          console.error('❌ Error actualizando estado:', updateError);
+        } else {
+          console.log('✅ Recordatorio marcado como enviado:', id);
+        }
       } else {
-        await supabase
+        console.error('❌ Error en sendEmailNotification:', result.error);
+
+        const { error: updateError } = await supabase
           .from('event_reminders')
           .update({
             status: 'failed',
@@ -60,22 +86,34 @@ const processReminder = async (reminder) => {
           })
           .eq('id', id);
 
-        console.error('❌ Error enviando recordatorio:', result.error);
+        if (updateError) {
+          console.error('❌ Error actualizando error:', updateError);
+        }
       }
+    } else {
+      console.warn('⚠️ Recordatorio sin email o tipo incorrecto:', {
+        notification_type,
+        email,
+        status: reminder.status
+      });
     }
   } catch (error) {
-    console.error('Error procesando recordatorio:', error);
+    console.error('❌ Error procesando recordatorio:', error);
   }
 };
 
 export const startReminderWorker = () => {
   console.log('🔄 Iniciando servicio de recordatorios...');
+  console.log('⏰ Se verificarán recordatorios cada 60 segundos');
   
-  setInterval(() => {
-    checkAndSendReminders();
-  }, 60000);
-  
+  // Ejecutar inmediatamente
   checkAndSendReminders();
+  
+  // Luego cada 60 segundos
+  setInterval(() => {
+    console.log('🔄 Verificando recordatorios...');
+    checkAndSendReminders();
+  }, 60000); // 60 segundos
 };
 
 export default {
