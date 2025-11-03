@@ -61,13 +61,24 @@ const NotificationConfigModal = ({
   const [email, setEmail] = useState(userEmail || '');
   const [emailError, setEmailError] = useState('');
   const [savedMessage, setSavedMessage] = useState('');
+  const [loading, setLoading] = useState(false);
 
   const handleSave = async () => {
     setEmailError('');
     setSavedMessage('');
+    setLoading(true);
 
+    // Validar que el email no esté vacío
+    if (!email || email.trim() === '') {
+      setEmailError('❌ El email es requerido');
+      setLoading(false);
+      return;
+    }
+
+    // Validar formato del email
     if (email && !isValidEmail(email)) {
       setEmailError('❌ Email inválido');
+      setLoading(false);
       return;
     }
 
@@ -75,32 +86,41 @@ const NotificationConfigModal = ({
       const { data: { user: currentUser } } = await supabase.auth.getUser();
       if (!currentUser) throw new Error('No hay usuario autenticado');
 
-      // Guardar SOLO email en notification_preferences
+      console.log('💾 Guardando email:', email);
+
+      // IMPORTANTE: Guardar como STRING en el campo correcto
       const { error } = await supabase
         .from('user_profiles')
         .upsert({
           id: currentUser.id,
-          notification_preferences: {
-            email: email || null,
-            updated_at: new Date().toISOString()
-          },
+          notification_email: email.trim(), // ← Campo específico de tipo TEXT
           updated_at: new Date().toISOString()
         }, {
           onConflict: 'id'
         });
 
-      if (error) throw error;
+      if (error) {
+        console.error('❌ Error de Supabase:', error);
+        throw error;
+      }
 
+      console.log('✅ Email guardado correctamente:', email);
       setSavedMessage('✅ Email guardado correctamente');
-      if (onSave) onSave({ email });
+      
+      if (onSave) {
+        onSave({ email: email.trim() });
+      }
       
       setTimeout(() => {
         setSavedMessage('');
         onClose();
-      }, 2000);
+      }, 1500);
+
     } catch (error) {
-      console.error('Error guardando email:', error);
+      console.error('❌ Error guardando email:', error);
       setSavedMessage('❌ Error al guardar: ' + error.message);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -148,8 +168,7 @@ const NotificationConfigModal = ({
         {/* Email Input */}
         <div style={{ marginBottom: '1.5rem' }}>
           <label style={{ display: 'block', color: text, fontWeight: '600', marginBottom: '0.5rem' }}>
-            <Mail size={16} style={{ display: 'inline', marginRight: '0.5rem' }} />
-            Email para Recordatorios
+            📧 Email para Recordatorios
           </label>
           <input
             type="email"
@@ -159,6 +178,7 @@ const NotificationConfigModal = ({
               setEmail(e.target.value);
               setEmailError('');
             }}
+            disabled={loading}
             style={{
               width: '100%',
               padding: '0.75rem',
@@ -167,7 +187,9 @@ const NotificationConfigModal = ({
               backgroundColor: input,
               color: text,
               boxSizing: 'border-box',
-              fontSize: '0.95rem'
+              fontSize: '0.95rem',
+              opacity: loading ? 0.6 : 1,
+              cursor: loading ? 'not-allowed' : 'text'
             }}
           />
           {emailError && (
@@ -202,21 +224,24 @@ const NotificationConfigModal = ({
         <div style={{ display: 'flex', gap: '1rem' }}>
           <button
             onClick={handleSave}
+            disabled={loading}
             style={{
               flex: 1,
               padding: '0.75rem',
-              backgroundColor: '#10b981',
+              backgroundColor: loading ? '#ccc' : '#10b981',
               color: 'white',
               border: 'none',
               borderRadius: '0.5rem',
-              cursor: 'pointer',
-              fontWeight: '600'
+              cursor: loading ? 'not-allowed' : 'pointer',
+              fontWeight: '600',
+              opacity: loading ? 0.7 : 1
             }}
           >
-            Guardar Email
+            {loading ? '⏳ Guardando...' : '✅ Guardar Email'}
           </button>
           <button
             onClick={onClose}
+            disabled={loading}
             style={{
               flex: 1,
               padding: '0.75rem',
@@ -224,8 +249,9 @@ const NotificationConfigModal = ({
               color: 'white',
               border: 'none',
               borderRadius: '0.5rem',
-              cursor: 'pointer',
-              fontWeight: '600'
+              cursor: loading ? 'not-allowed' : 'pointer',
+              fontWeight: '600',
+              opacity: loading ? 0.7 : 1
             }}
           >
             Cancelar
@@ -270,10 +296,22 @@ const AppEvents = ({
   const [userContacts, setUserContacts] = useState({ email: '' });
   const [showNotificationConfig, setShowNotificationConfig] = useState(false);
 
-  // Cargar contactos del usuario al montar
+  // Cargar contactos del usuario al montar (SOLO UNA VEZ)
   useEffect(() => {
-    loadUserContacts();
-  }, []);
+    let isMounted = true;
+    
+    const load = async () => {
+      if (isMounted) {
+        await loadUserContacts();
+      }
+    };
+    
+    load();
+    
+    return () => {
+      isMounted = false;
+    };
+  }, []); // Array vacío = solo al montar
 
   // En AppEvents.js, reemplaza la función loadUserContacts:
 
