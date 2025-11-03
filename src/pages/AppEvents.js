@@ -400,6 +400,7 @@ const AppEvents = ({
       if (!currentUser) throw new Error('No hay usuario autenticado');
 
       const newId = editingEventId || `event_${Date.now()}`;
+      // ✅ CORRECTO - recordatorio_email es boolean
       const newEvent = {
         id: newId,
         titulo: eventForm.titulo || 'Sin título',
@@ -412,8 +413,9 @@ const AppEvents = ({
         recordatorio_habilitado: Boolean(eventForm.recordatorio_habilitado),
         recordatorio_fecha: eventForm.recordatorio_fecha || null,
         recordatorio_hora: eventForm.recordatorio_hora || '08:00',
-        recordatorio_tipo: 'email', // SOLO EMAIL AHORA
-        recordatorio_email: userContacts.email,
+        recordatorio_tipo: 'email',
+        recordatorio_email: Boolean(eventForm.recordatorio_habilitado), // ✅ boolean
+        email_destinatario: userContacts.email, // ✅ Usa ESTA columna para el email
         user_id: currentUser.id,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
