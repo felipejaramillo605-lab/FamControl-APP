@@ -68,43 +68,55 @@ const NotificationConfigModal = ({
     setSavedMessage('');
     setLoading(true);
 
-    // Validar que el email no esté vacío
-    if (!email || email.trim() === '') {
-      setEmailError('❌ El email es requerido');
-      setLoading(false);
-      return;
-    }
-
-    // Validar formato del email
-    if (email && !isValidEmail(email)) {
-      setEmailError('❌ Email inválido');
-      setLoading(false);
-      return;
-    }
-
     try {
-      const { data: { user: currentUser } } = await supabase.auth.getUser();
-      if (!currentUser) throw new Error('No hay usuario autenticado');
+      // PRIMERO: Obtener el usuario
+      const { data: { user: currentUser }, error: authError } = await supabase.auth.getUser();
+      
+      console.log('👤 Usuario verificado:', currentUser?.id);
+      console.log('🔑 UID:', currentUser?.id);
 
-      console.log('💾 Guardando email:', email);
+      if (!currentUser || !currentUser.id) {
+        console.error('❌ No hay usuario autenticado');
+        setEmailError('❌ Debes estar autenticado para guardar');
+        setLoading(false);
+        return;
+      }
 
-      // IMPORTANTE: Guardar como STRING en el campo correcto
-      const { error } = await supabase
+      // Validar que el email no esté vacío
+      if (!email || email.trim() === '') {
+        setEmailError('❌ El email es requerido');
+        setLoading(false);
+        return;
+      }
+
+      // Validar formato del email
+      if (email && !isValidEmail(email)) {
+        setEmailError('❌ Email inválido');
+        setLoading(false);
+        return;
+      }
+
+      console.log('💾 Guardando email:', email, 'para usuario:', currentUser.id);
+
+      // Intenta guardar SOLO sin RLS complicado
+      const { data, error } = await supabase
         .from('user_profiles')
         .upsert({
           id: currentUser.id,
-          notification_email: email.trim(), // ← Campo específico de tipo TEXT
+          notification_email: email.trim(),
           updated_at: new Date().toISOString()
         }, {
           onConflict: 'id'
         });
 
+      console.log('📤 Respuesta:', { data, error });
+
       if (error) {
-        console.error('❌ Error de Supabase:', error);
+        console.error('❌ Error:', error.message);
         throw error;
       }
 
-      console.log('✅ Email guardado correctamente:', email);
+      console.log('✅ Email guardado correctamente');
       setSavedMessage('✅ Email guardado correctamente');
       
       if (onSave) {
@@ -312,8 +324,6 @@ const AppEvents = ({
       isMounted = false;
     };
   }, []); // Array vacío = solo al montar
-
-  // En AppEvents.js, reemplaza la función loadUserContacts:
 
   const loadUserContacts = async () => {
     try {
