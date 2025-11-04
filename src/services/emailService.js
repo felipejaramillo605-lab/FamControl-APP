@@ -9,10 +9,14 @@ export const isValidEmail = (email) => {
 };
 
 /**
- * Enviar notificación por email usando Google Apps Script
+ * Enviar notificación por email usando Google Apps Script - CORREGIDO
  */
 export const sendEmailNotification = async (recipientEmail, eventData) => {
   try {
+    console.log('🚀 INICIANDO sendEmailNotification');
+    console.log('📧 Destinatario:', recipientEmail);
+    console.log('📋 Event Data:', eventData);
+
     // Validar email del destinatario
     if (!recipientEmail || !isValidEmail(recipientEmail)) {
       console.warn('⚠️ Email inválido:', recipientEmail);
@@ -28,13 +32,15 @@ export const sendEmailNotification = async (recipientEmail, eventData) => {
       return { success: false, error: 'Servicio de email no configurado' };
     }
 
+    console.log('🔗 URL del script:', googleScriptUrl);
+
     // Validar datos del evento
     if (!eventData || !eventData.titulo) {
       console.warn('⚠️ Datos del evento incompletos');
       return { success: false, error: 'Datos del evento incompletos' };
     }
 
-    // Construir payload para el Google Apps Script
+    // Construir payload para el Google Apps Script - CORREGIDO
     const payload = {
       action: 'sendEmail',
       recipient: recipientEmail.trim(),
@@ -42,32 +48,49 @@ export const sendEmailNotification = async (recipientEmail, eventData) => {
       emailBody: {
         eventTitle: eventData.titulo || 'Evento sin título',
         eventDate: eventData.fecha_inicio || 'Fecha no especificada',
-        eventTime: eventData.hora_inicio || 'Hora no especificada',
+        eventTime: eventData.reminder_time || eventData.hora_inicio || 'Hora no especificada', // ← CORREGIDO
         eventLocation: eventData.ubicacion || 'Ubicación no especificada',
         eventNotes: eventData.observaciones || 'Sin notas'
       }
     };
 
-    console.log('📧 Enviando email a:', recipientEmail);
-    console.log('📋 Datos del evento:', payload);
+    console.log('📤 Payload a enviar:', payload);
 
-    // Enviar solicitud al Google Apps Script
+    // ✅ CORRECCIÓN: ELIMINAR mode: 'no-cors' para poder leer la respuesta
     const response = await fetch(googleScriptUrl, {
       method: 'POST',
-      mode: 'no-cors', // Important para CORS
       headers: {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify(payload)
     });
 
-    console.log('✅ Solicitud de email enviada correctamente');
-    
-    return { 
-      success: true, 
-      recipient: recipientEmail,
-      message: 'Email enviado correctamente'
-    };
+    console.log('📨 Respuesta recibida, status:', response.status);
+
+    // ✅ CORRECCIÓN: Leer la respuesta del servidor
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('❌ Error HTTP:', response.status, errorText);
+      throw new Error(`Error del servidor: ${response.status} - ${errorText}`);
+    }
+
+    const result = await response.json();
+    console.log('✅ Respuesta JSON del servidor:', result);
+
+    if (result.success) {
+      console.log('🎉 Email enviado exitosamente');
+      return { 
+        success: true, 
+        recipient: recipientEmail,
+        message: result.message || 'Email enviado correctamente'
+      };
+    } else {
+      console.error('❌ Error en respuesta del servidor:', result.message);
+      return { 
+        success: false, 
+        error: result.message || 'Error desconocido del servidor'
+      };
+    }
 
   } catch (error) {
     console.error('❌ Error enviando email:', error);
@@ -78,6 +101,7 @@ export const sendEmailNotification = async (recipientEmail, eventData) => {
   }
 };
 
+// El resto del código se mantiene igual...
 /**
  * Guardar preferencias de notificación del usuario
  */
