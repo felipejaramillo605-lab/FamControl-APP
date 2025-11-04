@@ -446,8 +446,8 @@ const AppEvents = ({
           id: `reminder_${newId}`,
           event_id: newId,
           user_id: currentUser.id,
-          scheduled_for: reminderDateTime,
-          notification_type: 'email',
+          scheduled_for: reminderDateTime, // Usando la nueva columna
+          reminder_type: 'email',
           email: userContacts.email,
           status: 'pending',
           created_at: new Date().toISOString()

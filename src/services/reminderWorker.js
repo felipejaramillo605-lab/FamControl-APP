@@ -8,9 +8,7 @@ export const checkAndSendReminders = async () => {
     const tenMinutesAgo = new Date(now.getTime() - 10 * 60000);
     const tenMinutesFromNow = new Date(now.getTime() + 10 * 60000);
 
-    console.log('🔄 === INICIANDO VERIFICACIÓN DE RECORDATORIOS ===');
-    console.log('⏰ Ahora:', now.toISOString());
-    console.log('🔍 Rango de búsqueda:', tenMinutesAgo.toISOString(), 'a', tenMinutesFromNow.toISOString());
+    console.log('🔍 Buscando recordatorios entre:', tenMinutesAgo.toISOString(), 'y', tenMinutesFromNow.toISOString());
 
     const { data: reminders, error } = await supabase
       .from('event_reminders')
@@ -18,6 +16,7 @@ export const checkAndSendReminders = async () => {
       .eq('status', 'pending')
       .lte('scheduled_for', tenMinutesFromNow.toISOString())
       .gte('scheduled_for', tenMinutesAgo.toISOString());
+
 
     if (error) {
       console.error('❌ Error obteniendo recordatorios:', error);
