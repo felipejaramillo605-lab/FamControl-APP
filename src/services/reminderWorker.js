@@ -1,32 +1,46 @@
 import { supabase } from '../supabaseClient';
 import { sendEmailNotification } from './emailService';
 
+// reminderWorker.js - VERSIÓN MEJORADA CON MÁS LOGS
 export const checkAndSendReminders = async () => {
   try {
     const now = new Date();
-    const fiveMinutesAgo = new Date(now.getTime() - 5 * 60000);
+    const tenMinutesAgo = new Date(now.getTime() - 10 * 60000);
+    const tenMinutesFromNow = new Date(now.getTime() + 10 * 60000);
 
-    console.log('🔍 Buscando recordatorios entre:', fiveMinutesAgo.toISOString(), 'y', now.toISOString());
+    console.log('🔄 === INICIANDO VERIFICACIÓN DE RECORDATORIOS ===');
+    console.log('⏰ Ahora:', now.toISOString());
+    console.log('🔍 Rango de búsqueda:', tenMinutesAgo.toISOString(), 'a', tenMinutesFromNow.toISOString());
 
     const { data: reminders, error } = await supabase
       .from('event_reminders')
       .select('*, events(*)')
       .eq('status', 'pending')
-      .lte('scheduled_for', now.toISOString())
-      .gte('scheduled_for', fiveMinutesAgo.toISOString());
+      .lte('scheduled_for', tenMinutesFromNow.toISOString())
+      .gte('scheduled_for', tenMinutesAgo.toISOString());
 
     if (error) {
       console.error('❌ Error obteniendo recordatorios:', error);
       return;
     }
 
-    console.log(`📊 Recordatorios pendientes encontrados: ${reminders?.length || 0}`);
+    console.log(`📊 Recordatorios encontrados: ${reminders?.length || 0}`);
 
     if (reminders && reminders.length > 0) {
       for (const reminder of reminders) {
-        console.log('📬 Procesando recordatorio:', reminder.id);
+        console.log('🎯 Procesando recordatorio:', reminder.id);
         await processReminder(reminder);
       }
+    } else {
+      console.log('✅ No hay recordatorios pendientes en este momento');
+      
+      // DEBUG: Mostrar todos los recordatorios para diagnóstico
+      const { data: allReminders } = await supabase
+        .from('event_reminders')
+        .select('*, events(*)')
+        .order('scheduled_for', { ascending: true });
+      
+      console.log('📋 TODOS los recordatorios en BD:', allReminders);
     }
   } catch (error) {
     console.error('❌ Error en checkAndSendReminders:', error);
@@ -101,6 +115,15 @@ const processReminder = async (reminder) => {
     console.error('❌ Error procesando recordatorio:', error);
   }
 };
+
+// En reminderWorker.js - Función de diagnóstico
+export const forceCheckReminders = async () => {
+  console.log('🚨 === EJECUCIÓN MANUAL DE VERIFICACIÓN ===');
+  await checkAndSendReminders();
+};
+
+// En tu consola del navegador, ejecuta:
+// await forceCheckReminders();
 
 export const startReminderWorker = () => {
   console.log('🔄 Iniciando servicio de recordatorios...');
